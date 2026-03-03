@@ -88,8 +88,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     await _loadTheme();
   }
 
+  static DateTime _localNow() => DateTime.now().toLocal();
+
   static int _todayPlanId() {
-    final now = DateTime.now();
+    final now = _localNow();
     return now.year * 10000 + now.month * 100 + now.day;
   }
 
@@ -345,6 +347,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<List<Task>> _loadPlanTasks() async {
+    final localTodayPlanId = _todayPlanId();
+    if (_planId != localTodayPlanId) {
+      _planId = localTodayPlanId;
+      await _ensureTodayRitualTasks();
+    }
+
     final isar = await IsarDb.instance();
     return isar.tasks.filter().planIdEqualTo(_planId).sortByOrderIndex().findAll();
   }

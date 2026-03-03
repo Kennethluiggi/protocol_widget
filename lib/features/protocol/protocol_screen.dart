@@ -541,6 +541,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _startTask(Task task) async {
+    final tasks = await _loadPlanTasks();
+    final hasOtherActiveSession = tasks.any((item) => item.id != task.id && (item.status == 'running' || item.status == 'paused'));
+    if (hasOtherActiveSession) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Finish or reset the current active session before starting another task.')),
+        );
+      }
+      return;
+    }
+
     task.actualStartTs ??= DateTime.now().millisecondsSinceEpoch;
     task.status = 'running';
     _runningSince[task.id] = DateTime.now();
@@ -578,9 +589,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
   }
 
-  Task? _runningTask(List<Task> tasks) {
+  Task? _activeSessionTask(List<Task> tasks) {
     for (final task in tasks) {
       if (task.status == 'running') return task;
+    }
+    for (final task in tasks) {
+      if (task.status == 'paused') return task;
     }
     return null;
   }
@@ -885,6 +899,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Widget _buildRunningBanner(Task task, int elapsedMs) {
+    final isRunning = task.status == 'running';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       child: Center(
@@ -923,7 +938,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.tonal(onPressed: () => _pauseTask(task), child: const Text('Pause')),
+                TextButton(
+                  onPressed: isRunning ? () => _pauseTask(task) : () => _startTask(task),
+                  child: Text(isRunning ? 'Pause' : 'Resume'),
+                ),
+                FilledButton.tonal(onPressed: () => _doneTask(task), child: const Text('Done')),
               ],
             ),
           ),
@@ -964,10 +983,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
               return ValueListenableBuilder<DateTime>(
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
-                  final running = _runningTask(tasks);
+                  final activeSession = _activeSessionTask(tasks);
                   return Column(
                     children: [
-                      if (running != null) _buildRunningBanner(running, _elapsedMs(running, tick)),
+                      if (activeSession != null) _buildRunningBanner(activeSession, _elapsedMs(activeSession, tick)),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: Container(
@@ -1143,7 +1162,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                     ),
                                   ),
                                   SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
-                                  SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
+                                  SizedBox(
+                                    width: _controlColumnWidth,
+                                    child: _buildControls(task, elapsed, tasks),
+                                  ),
                                   SizedBox(
                                     width: _deleteMode && !_isMandatoryTask(task) ? 80 : 44,
                                     child: Row(
@@ -1186,8 +1208,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     );
   }
 
-  Widget _buildControls(Task task, int elapsedMs) {
-    final canStart = task.plannedStartMin != null && task.targetMin != null;
+  Widget _buildControls(Task task, int elapsedMs, List<Task> tasks) {
+    final activeSession = _activeSessionTask(tasks);
+    final startBlockedByOtherSession = activeSession != null && activeSession.id != task.id;
+    final canStart = task.plannedStartMin != null && task.targetMin != null && !startBlockedByOtherSession;
     switch (task.status) {
       case 'running':
         return Row(

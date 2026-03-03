@@ -35,6 +35,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine2 = 'I DON\'T NEGOTIATE WITH TODAY.';
   static const String _defaultLine3 = 'FINISH FIRST. IMPROVE SECOND.';
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
+  static const String _walkTitle = 'Walk';
+  static const String _transitionTitle = 'Transition (Light meal / half-caff + cold water)';
+  static const String _deskMantraTitle = 'Desk + Mantra';
+  static const String _brainDumpTitle = 'Brain Dump';
   static const String _defaultThemeId = 'clouds';
 
   static const List<String> _themeOptions = ['clouds', 'books', 'aggressive', 'minimal'];
@@ -44,10 +48,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const double _controlColumnWidth = 220;
   static const int _taskTitleMaxChars = 40;
   static const Set<String> _mandatoryRitualTitles = {
-    'Walk',
-    'Transition (Light meal / half-caff + cold water)',
-    'Desk + Mantra',
-    'Brain Dump',
+    _walkTitle,
+    _transitionTitle,
+    _deskMantraTitle,
+    _brainDumpTitle,
   };
 
   final Map<int, DateTime> _runningSince = {};
@@ -101,10 +105,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (existing.isNotEmpty) return;
 
     final templates = <({String title, int? targetMin})>[
-      (title: 'Walk', targetMin: 30),
-      (title: 'Transition (Light meal / half-caff + cold water)', targetMin: null),
-      (title: 'Desk + Mantra', targetMin: null),
-      (title: 'Brain Dump', targetMin: 15),
+      (title: _walkTitle, targetMin: 30),
+      (title: _transitionTitle, targetMin: null),
+      (title: _deskMantraTitle, targetMin: null),
+      (title: _brainDumpTitle, targetMin: 15),
     ];
 
     final tasks = <Task>[];
@@ -464,7 +468,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (didSave == true) {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
-      final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
+      final pickedStart = plannedStart!.hour * 60 + plannedStart!.minute;
+      final threshold = _nonRitualStartThreshold(tasks);
+      final startMin = threshold != null && pickedStart < threshold ? threshold : pickedStart;
       final endMin = startMin + goalMin;
 
       var nextOrderIndex = 0;
@@ -562,8 +568,45 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
   }
 
+  int? _ritualOrder(String title) {
+    if (title == _walkTitle) return 0;
+    if (title == _transitionTitle) return 1;
+    if (title == _deskMantraTitle) return 2;
+    if (title == _brainDumpTitle) return 3;
+    return null;
+  }
+
+  int? _nonRitualStartThreshold(List<Task> tasks) {
+    int? walkStart;
+    int? brainDumpEnd;
+    for (final task in tasks) {
+      if (task.title == _walkTitle) {
+        walkStart = task.plannedStartMin;
+      }
+      if (task.title == _brainDumpTitle) {
+        brainDumpEnd = task.plannedEndMin;
+      }
+    }
+    return brainDumpEnd ?? walkStart;
+  }
+
   Future<void> _sortTasksByStartTime(List<Task> tasks) async {
-    tasks.sort((a, b) {
+    final ritualTasks = <Task>[];
+    final nonRitualTasks = <Task>[];
+
+    for (final task in tasks) {
+      if (_ritualOrder(task.title) != null) {
+        ritualTasks.add(task);
+      } else {
+        nonRitualTasks.add(task);
+      }
+    }
+
+    ritualTasks.sort((a, b) {
+      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
+    });
+
+    nonRitualTasks.sort((a, b) {
       final aStart = a.plannedStartMin;
       final bStart = b.plannedStartMin;
       if (aStart == null && bStart == null) {
@@ -576,13 +619,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       return a.orderIndex.compareTo(b.orderIndex);
     });
 
-    for (var i = 0; i < tasks.length; i++) {
-      tasks[i].orderIndex = i;
+    final combined = <Task>[...ritualTasks, ...nonRitualTasks];
+    for (var i = 0; i < combined.length; i++) {
+      combined[i].orderIndex = i;
     }
 
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
-      await isar.tasks.putAll(tasks);
+      await isar.tasks.putAll(combined);
     });
   }
 
@@ -636,7 +680,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     );
     if (picked == null) return;
 
-    final newStart = picked.hour * 60 + picked.minute;
+    final pickedStart = picked.hour * 60 + picked.minute;
+    final threshold = _isMandatoryTask(selected) ? null : _nonRitualStartThreshold(tasks);
+    final newStart = threshold != null && pickedStart < threshold ? threshold : pickedStart;
     if (oldStart == newStart) return;
 
     selected.plannedStartMin = newStart;

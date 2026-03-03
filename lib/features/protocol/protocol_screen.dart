@@ -37,7 +37,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
   static const String _defaultThemeId = 'clouds';
 
-  static const List<String> _themeOptions = ['clouds', 'books', 'aggressive', 'minimal'];
+  static const List<String> _themeOptions = ['clouds', 'books', 'steel', 'minimal'];
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;

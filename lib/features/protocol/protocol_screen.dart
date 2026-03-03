@@ -20,6 +20,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const int _settingsPlanId = -1;
   static const String _settingsType = 'user_settings';
   static const String _aotTitle = 'always_on_top';
+  static const String _themeTitle = 'header_theme';
   static const String _mantraLine1Key = 'mantra_line_1';
   static const String _mantraLine2Key = 'mantra_line_2';
   static const String _mantraLine3Key = 'mantra_line_3';
@@ -34,6 +35,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine2 = 'I DON\'T NEGOTIATE WITH TODAY.';
   static const String _defaultLine3 = 'FINISH FIRST. IMPROVE SECOND.';
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
+  static const String _defaultThemeId = 'clouds';
+
+  static const List<String> _themeOptions = ['clouds', 'books', 'aggressive', 'minimal'];
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;
@@ -47,6 +51,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   bool _alwaysOnTop = false;
   int _planId = _todayPlanId();
+  String _selectedThemeId = _defaultThemeId;
   String _mantraLine1 = _defaultLine1;
   String _mantraLine2 = _defaultLine2;
   String _mantraLine3 = _defaultLine3;
@@ -72,6 +77,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     await _ensureTodayRitualTasks();
     await _loadAlwaysOnTop();
     await _loadMantra();
+    await _loadTheme();
   }
 
   static int _todayPlanId() {
@@ -82,9 +88,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _ensureTodayRitualTasks() async {
     final isar = await IsarDb.instance();
     final existing = await isar.tasks.filter().planIdEqualTo(_planId).findAll();
-    if (existing.isNotEmpty) {
-      return;
-    }
+    if (existing.isNotEmpty) return;
 
     final templates = <({String title, int? targetMin})>[
       (title: 'Walk', targetMin: 30),
@@ -112,42 +116,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
   }
 
-  Future<void> _loadAlwaysOnTop() async {
-    final setting = await _getSetting(_aotTitle);
-    _alwaysOnTop = setting?.goalChimed ?? false;
-    await _applyAlwaysOnTop(_alwaysOnTop);
-  }
-
-  Future<void> _setAlwaysOnTop(bool value) async {
-    final existing = await _getSetting(_aotTitle);
-    final row = _newOrExistingSetting(existing, _aotTitle)..goalChimed = value;
-
-    final isar = await IsarDb.instance();
-    await isar.writeTxn(() async {
-      await isar.tasks.put(row);
-    });
-
-    setState(() {
-      _alwaysOnTop = value;
-    });
-
-    await _applyAlwaysOnTop(value);
-  }
-
-  Future<void> _loadMantra() async {
-    final line1 = await _getSettingText(_mantraLine1Key);
-    final line2 = await _getSettingText(_mantraLine2Key);
-    final line3 = await _getSettingText(_mantraLine3Key);
-    final line4 = await _getSettingText(_mantraLine4Key);
-
-    setState(() {
-      _mantraLine1 = (line1 == null || line1.trim().isEmpty) ? _defaultLine1 : line1;
-      _mantraLine2 = (line2 == null || line2.trim().isEmpty) ? _defaultLine2 : line2;
-      _mantraLine3 = (line3 == null || line3.trim().isEmpty) ? _defaultLine3 : line3;
-      _mantraLine4 = (line4 == null || line4.trim().isEmpty) ? _defaultLine4 : line4;
-    });
-  }
-
   Future<Task?> _getSetting(String key) async {
     final isar = await IsarDb.instance();
     return isar.tasks
@@ -170,9 +138,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Future<String?> _getSettingText(String key) async {
     final setting = await _getSetting(key);
-    if (setting == null || setting.bullets.isEmpty) {
-      return null;
-    }
+    if (setting == null || setting.bullets.isEmpty) return null;
     return setting.bullets.first;
   }
 
@@ -183,6 +149,115 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
       await isar.tasks.put(row);
+    });
+  }
+
+  Future<void> _loadAlwaysOnTop() async {
+    final setting = await _getSetting(_aotTitle);
+    _alwaysOnTop = setting?.goalChimed ?? false;
+    await _applyAlwaysOnTop(_alwaysOnTop);
+  }
+
+  Future<void> _setAlwaysOnTop(bool value) async {
+    final existing = await _getSetting(_aotTitle);
+    final row = _newOrExistingSetting(existing, _aotTitle)..goalChimed = value;
+
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.put(row);
+    });
+
+    setState(() {
+      _alwaysOnTop = value;
+    });
+    await _applyAlwaysOnTop(value);
+  }
+
+  Future<void> _loadTheme() async {
+    final value = await _getSettingText(_themeTitle);
+    setState(() {
+      _selectedThemeId = _themeOptions.contains(value) ? value! : _defaultThemeId;
+    });
+  }
+
+  Future<void> _saveTheme(String themeId) async {
+    await _saveSettingText(_themeTitle, themeId);
+    if (!mounted) return;
+    setState(() {
+      _selectedThemeId = themeId;
+    });
+  }
+
+  Future<void> _openThemePickerDialog() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Header Theme'),
+          content: SizedBox(
+            width: 420,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: _themeOptions.map((themeId) {
+                final isSelected = themeId == _selectedThemeId;
+                return InkWell(
+                  onTap: () => Navigator.of(context).pop(themeId),
+                  child: Container(
+                    width: 180,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).dividerColor,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.asset(
+                            'assets/themes/$themeId.png',
+                            height: 84,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: Colors.black12,
+                              height: 84,
+                              alignment: Alignment.center,
+                              child: const Text('Missing image'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(themeId.toUpperCase()),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == _selectedThemeId) return;
+    await _saveTheme(selected);
+  }
+
+  Future<void> _loadMantra() async {
+    final line1 = await _getSettingText(_mantraLine1Key);
+    final line2 = await _getSettingText(_mantraLine2Key);
+    final line3 = await _getSettingText(_mantraLine3Key);
+    final line4 = await _getSettingText(_mantraLine4Key);
+
+    setState(() {
+      _mantraLine1 = (line1 == null || line1.trim().isEmpty) ? _defaultLine1 : line1;
+      _mantraLine2 = (line2 == null || line2.trim().isEmpty) ? _defaultLine2 : line2;
+      _mantraLine3 = (line3 == null || line3.trim().isEmpty) ? _defaultLine3 : line3;
+      _mantraLine4 = (line4 == null || line4.trim().isEmpty) ? _defaultLine4 : line4;
     });
   }
 
@@ -212,14 +287,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Save'),
-            ),
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
           ],
         );
       },
@@ -258,17 +327,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       maxLength: maxChars,
       maxLengthEnforcement: MaxLengthEnforcement.enforced,
       inputFormatters: [LengthLimitingTextInputFormatter(maxChars)],
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
     );
   }
 
   Future<void> _applyAlwaysOnTop(bool value) async {
-    if (!(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-      return;
-    }
+    if (!(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) return;
     await windowManager.setAlwaysOnTop(value);
   }
 
@@ -281,9 +345,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final titleController = TextEditingController();
     final goalController = TextEditingController();
     TimeOfDay? plannedStart;
-    String? titleErrorText;
-    String? goalErrorText;
-    String? timeErrorText;
+    String? titleError;
+    String? goalError;
+    String? startError;
 
     final didSave = await showDialog<bool>(
       context: context,
@@ -301,7 +365,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       decoration: InputDecoration(
                         labelText: 'Title *',
                         border: const OutlineInputBorder(),
-                        errorText: titleErrorText,
+                        errorText: titleError,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -312,14 +376,16 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       decoration: InputDecoration(
                         labelText: 'Goal minutes *',
                         border: const OutlineInputBorder(),
-                        errorText: goalErrorText,
+                        errorText: goalError,
                       ),
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
-                          child: Text(plannedStart == null ? 'Planned start: —' : 'Planned start: ${plannedStart!.format(context)}'),
+                          child: Text(
+                            plannedStart == null ? 'Planned start: —' : 'Planned start: ${plannedStart!.format(context)}',
+                          ),
                         ),
                         TextButton(
                           onPressed: () async {
@@ -330,6 +396,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                             if (picked != null) {
                               setDialogState(() {
                                 plannedStart = picked;
+                                startError = null;
                               });
                             }
                           },
@@ -337,33 +404,30 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         ),
                       ],
                     ),
-                    if (timeErrorText != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            timeErrorText!,
-                            style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
-                          ),
+                    if (startError != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          startError!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                         ),
                       ),
                   ],
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
                 FilledButton(
                   onPressed: () {
-                    final parsedGoal = int.tryParse(goalController.text.trim());
-                    if (titleController.text.trim().isEmpty || parsedGoal == null || parsedGoal <= 0 || plannedStart == null) {
+                    final parsed = int.tryParse(goalController.text.trim());
+                    final missingTitle = titleController.text.trim().isEmpty;
+                    final missingGoal = parsed == null || parsed <= 0;
+                    final missingStart = plannedStart == null;
+                    if (missingTitle || missingGoal || missingStart) {
                       setDialogState(() {
-                        titleErrorText = titleController.text.trim().isEmpty ? 'Title is required' : null;
-                        goalErrorText = (parsedGoal == null || parsedGoal <= 0) ? 'Goal minutes required' : null;
-                        timeErrorText = plannedStart == null ? 'Planned start required' : null;
+                        titleError = missingTitle ? 'Title is required' : null;
+                        goalError = missingGoal ? 'Goal minutes required' : null;
+                        startError = missingStart ? 'Planned start required' : null;
                       });
                       return;
                     }
@@ -381,14 +445,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (didSave == true) {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
-      final plannedStartMin = plannedStart == null ? null : plannedStart!.hour * 60 + plannedStart!.minute;
-      final plannedEndMin = (plannedStartMin != null) ? plannedStartMin + goalMin : null;
+      final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
 
       var nextOrderIndex = 0;
       for (final task in tasks) {
-        if (task.orderIndex >= nextOrderIndex) {
-          nextOrderIndex = task.orderIndex + 1;
-        }
+        if (task.orderIndex >= nextOrderIndex) nextOrderIndex = task.orderIndex + 1;
       }
 
       final newTask = Task()
@@ -397,18 +458,15 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         ..type = 'focus'
         ..title = title
         ..targetMin = goalMin
-        ..plannedStartMin = plannedStartMin
-        ..plannedEndMin = plannedEndMin
+        ..plannedStartMin = startMin
+        ..plannedEndMin = startMin + goalMin
         ..status = 'not_started';
 
       final isar = await IsarDb.instance();
       await isar.writeTxn(() async {
         await isar.tasks.put(newTask);
       });
-
-      if (mounted) {
-        setState(() {});
-      }
+      if (mounted) setState(() {});
     }
 
     titleController.dispose();
@@ -416,30 +474,24 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _resetToday(List<Task> tasks) async {
-    final resettable = <Task>[];
     for (final task in tasks) {
       task.status = 'not_started';
       task.actualStartTs = null;
       task.actualEndTs = null;
       task.actualAccumulatedMs = 0;
       task.goalChimed = false;
-      resettable.add(task);
       _runningSince.remove(task.id);
     }
 
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
-      await isar.tasks.putAll(resettable);
+      await isar.tasks.putAll(tasks);
     });
-
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _startTask(Task task) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    task.actualStartTs ??= now;
+    task.actualStartTs ??= DateTime.now().millisecondsSinceEpoch;
     task.status = 'running';
     _runningSince[task.id] = DateTime.now();
     await _saveTask(task);
@@ -449,8 +501,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _pauseTask(Task task) async {
     final since = _runningSince[task.id];
     if (since != null) {
-      final delta = DateTime.now().difference(since).inMilliseconds;
-      task.actualAccumulatedMs += delta;
+      task.actualAccumulatedMs += DateTime.now().difference(since).inMilliseconds;
     }
     _runningSince.remove(task.id);
     task.status = 'paused';
@@ -459,14 +510,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _doneTask(Task task) async {
-    if (task.status == 'running') {
-      final since = _runningSince[task.id];
-      if (since != null) {
-        final delta = DateTime.now().difference(since).inMilliseconds;
-        task.actualAccumulatedMs += delta;
-      }
+    final since = _runningSince[task.id];
+    if (since != null && task.status == 'running') {
+      task.actualAccumulatedMs += DateTime.now().difference(since).inMilliseconds;
     }
-
     _runningSince.remove(task.id);
     task.actualEndTs = DateTime.now().millisecondsSinceEpoch;
     task.status = 'done';
@@ -479,6 +526,13 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     await isar.writeTxn(() async {
       await isar.tasks.put(task);
     });
+  }
+
+  Task? _runningTask(List<Task> tasks) {
+    for (final task in tasks) {
+      if (task.status == 'running') return task;
+    }
+    return null;
   }
 
   int _elapsedMs(Task task, DateTime tick) {
@@ -503,8 +557,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   String _formatClock(BuildContext context, int minutes) {
     final hour = (minutes ~/ 60) % 24;
     final minute = minutes % 60;
-    return MaterialLocalizations.of(context)
-        .formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
+    return MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
   }
 
   String _plannedWindow(BuildContext context, Task task) {
@@ -516,12 +569,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Future<void> _editStartTime(Task selected, List<Task> tasks) async {
     final oldStart = selected.plannedStartMin;
-    final initialMin = oldStart ?? 9 * 60;
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(hour: initialMin ~/ 60, minute: initialMin % 60),
+      initialTime: TimeOfDay(hour: (oldStart ?? 540) ~/ 60, minute: (oldStart ?? 540) % 60),
     );
-
     if (picked == null) return;
 
     final newStart = picked.hour * 60 + picked.minute;
@@ -545,21 +596,16 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       changed.add(task);
     }
 
-    if (changed.isEmpty) {
-      return;
-    }
-
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
       await isar.tasks.putAll(changed);
     });
-
     setState(() {});
   }
 
   Future<void> _editGoal(Task task) async {
     final controller = TextEditingController(text: task.targetMin?.toString() ?? '');
-    int? selected;
+    int? selectedValue = task.targetMin;
 
     final didSave = await showDialog<bool>(
       context: context,
@@ -575,13 +621,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     controller: controller,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Minutes',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
+                    decoration: const InputDecoration(labelText: 'Minutes', border: OutlineInputBorder()),
+                    onChanged: (v) {
                       setDialogState(() {
-                        selected = int.tryParse(value);
+                        selectedValue = int.tryParse(v);
                       });
                     },
                   ),
@@ -591,10 +634,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     children: [10, 15, 30, 40, 60].map((m) {
                       return ChoiceChip(
                         label: Text('$m'),
-                        selected: selected == m,
+                        selected: selectedValue == m,
                         onSelected: (_) {
                           setDialogState(() {
-                            selected = m;
+                            selectedValue = m;
                             controller.text = '$m';
                           });
                         },
@@ -620,18 +663,28 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     final goal = int.tryParse(controller.text.trim());
     controller.dispose();
-    if (goal == null || goal <= 0) {
-      return;
-    }
+    if (goal == null || goal <= 0) return;
 
     task.targetMin = goal;
     if (task.plannedStartMin != null) {
       task.plannedEndMin = task.plannedStartMin! + goal;
     }
     await _saveTask(task);
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildHeaderRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: const [
+          SizedBox(width: _timeColumnWidth, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(child: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(width: _goalColumnWidth, child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(width: _controlColumnWidth, child: Text('Control', style: TextStyle(fontWeight: FontWeight.bold))),
+        ],
+      ),
+    );
   }
 
   Widget _buildTimePill(Task task, List<Task> tasks) {
@@ -652,26 +705,29 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     );
   }
 
-  Widget _buildHeaderRow() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+  Widget _buildRunningBanner(Task task, int elapsedMs) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Row(
-        children: const [
-          SizedBox(
-            width: _timeColumnWidth,
-            child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+        children: [
           Expanded(
-            child: Text('Action', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(
+                  task.targetMin == null ? _formatDuration(elapsedMs) : '${_formatDuration(elapsedMs)} • Goal ${task.targetMin}m',
+                ),
+              ],
+            ),
           ),
-          SizedBox(
-            width: _goalColumnWidth,
-            child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          SizedBox(
-            width: _controlColumnWidth,
-            child: Text('Control', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+          TextButton(onPressed: () => _pauseTask(task), child: const Text('Pause')),
+          FilledButton.tonal(onPressed: () => _doneTask(task), child: const Text('Done')),
         ],
       ),
     );
@@ -693,139 +749,179 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
               Row(
                 children: [
                   const Text('Always on top'),
-                  Switch(
-                    value: _alwaysOnTop,
-                    onChanged: _setAlwaysOnTop,
-                  ),
+                  Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
                 ],
               ),
             ],
           ),
-          body: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _openEditMantraDialog,
-                        child: const Text('Edit'),
-                      ),
-                    ),
-                    Text(
-                      _mantraLine1,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.8),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _mantraLine2,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.6),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _mantraLine3,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0.4),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _mantraLine4,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSecondaryContainer,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              FutureBuilder<List<Task>>(
-                future: _loadPlanTasks(),
-                builder: (context, tasksSnapshot) {
-                  if (!tasksSnapshot.hasData) {
-                    return const Expanded(child: Center(child: CircularProgressIndicator()));
-                  }
-                  final tasks = tasksSnapshot.data!;
+          body: FutureBuilder<List<Task>>(
+            future: _loadPlanTasks(),
+            builder: (context, tasksSnapshot) {
+              if (!tasksSnapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final tasks = tasksSnapshot.data!;
 
-                  return Expanded(
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                          child: Row(
-                            children: [
-                              FilledButton.tonal(
-                                onPressed: () => _openAddTaskDialog(tasks),
-                                child: const Text('Add Task'),
-                              ),
-                              const SizedBox(width: 8),
-                              OutlinedButton(
-                                onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
-                                child: const Text('Reset Today'),
+              return ValueListenableBuilder<DateTime>(
+                valueListenable: _ticker,
+                builder: (context, tick, _) {
+                  final running = _runningTask(tasks);
+                  return Column(
+                    children: [
+                      if (running != null) _buildRunningBanner(running, _elapsedMs(running, tick)),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 12,
+                                offset: const Offset(0, 5),
                               ),
                             ],
                           ),
-                        ),
-                        _buildHeaderRow(),
-                        const Divider(height: 1),
-                        Expanded(
-                          child: ValueListenableBuilder<DateTime>(
-                            valueListenable: _ticker,
-                            builder: (context, tick, _) {
-                              return ListView.separated(
-                                itemCount: tasks.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1),
-                                itemBuilder: (context, index) {
-                                  final task = tasks[index];
-                                  final elapsed = _elapsedMs(task, tick);
-                                  return Padding(
-                                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          width: _timeColumnWidth,
-                                          child: _buildTimePill(task, tasks),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: Image.asset(
+                                    'assets/themes/$_selectedThemeId.png',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                                  ),
+                                ),
+                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          TextButton(
+                                            onPressed: _openThemePickerDialog,
+                                            style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                            child: const Text('Theme'),
+                                          ),
+                                          TextButton(
+                                            onPressed: _openEditMantraDialog,
+                                            style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                            child: const Text('Edit'),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        _mantraLine1,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.8,
                                         ),
-                                        Expanded(
-                                          child: Text(
-                                            task.title,
-                                            style: TextStyle(
-                                              decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
-                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _mantraLine2,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.6,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _mantraLine3,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 0.4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.16),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          _mantraLine4,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.6,
                                           ),
                                         ),
-                                        SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
-                                        SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Row(
+                          children: [
+                            FilledButton.tonal(onPressed: () => _openAddTaskDialog(tasks), child: const Text('Add Task')),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
+                              child: const Text('Reset Today'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildHeaderRow(),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: tasks.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final task = tasks[index];
+                            final elapsed = _elapsedMs(task, tick);
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
+                                  Expanded(
+                                    child: Text(
+                                      task.title,
+                                      style: TextStyle(
+                                        decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
+                                  SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   );
                 },
-              ),
-            ],
+              );
+            },
           ),
         );
       },

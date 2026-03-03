@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:isar/isar.dart';
-
 import '../../data/isar_db.dart';
 import '../../data/models/task.dart';
 
@@ -36,8 +35,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine3 = 'FINISH FIRST. IMPROVE SECOND.';
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
 
-  static const double _timeColumnWidth = 100;
-  static const double _goalColumnWidth = 92;
+  static const double _timeColumnWidth = 190;
+  static const double _goalColumnWidth = 130;
   static const double _controlColumnWidth = 220;
 
   final Map<int, DateTime> _runningSince = {};
@@ -282,7 +281,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final titleController = TextEditingController();
     final goalController = TextEditingController();
     TimeOfDay? plannedStart;
-    String? errorText;
+    String? titleErrorText;
+    String? goalErrorText;
+    String? timeErrorText;
 
     final didSave = await showDialog<bool>(
       context: context,
@@ -300,7 +301,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       decoration: InputDecoration(
                         labelText: 'Title *',
                         border: const OutlineInputBorder(),
-                        errorText: errorText,
+                        errorText: titleErrorText,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -308,20 +309,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       controller: goalController,
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Goal minutes (optional)',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: 'Goal minutes *',
+                        border: const OutlineInputBorder(),
+                        errorText: goalErrorText,
                       ),
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            plannedStart == null
-                                ? 'Planned start: —'
-                                : 'Planned start: ${plannedStart!.format(context)}',
-                          ),
+                          child: Text(plannedStart == null ? 'Planned start: —' : 'Planned start: ${plannedStart!.format(context)}'),
                         ),
                         TextButton(
                           onPressed: () async {
@@ -339,6 +337,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         ),
                       ],
                     ),
+                    if (timeErrorText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            timeErrorText!,
+                            style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -349,9 +358,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 ),
                 FilledButton(
                   onPressed: () {
-                    if (titleController.text.trim().isEmpty) {
+                    final parsedGoal = int.tryParse(goalController.text.trim());
+                    if (titleController.text.trim().isEmpty || parsedGoal == null || parsedGoal <= 0 || plannedStart == null) {
                       setDialogState(() {
-                        errorText = 'Title is required';
+                        titleErrorText = titleController.text.trim().isEmpty ? 'Title is required' : null;
+                        goalErrorText = (parsedGoal == null || parsedGoal <= 0) ? 'Goal minutes required' : null;
+                        timeErrorText = plannedStart == null ? 'Planned start required' : null;
                       });
                       return;
                     }
@@ -368,9 +380,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     if (didSave == true) {
       final title = titleController.text.trim();
-      final goalMin = int.tryParse(goalController.text.trim());
+      final goalMin = int.parse(goalController.text.trim());
       final plannedStartMin = plannedStart == null ? null : plannedStart!.hour * 60 + plannedStart!.minute;
-      final plannedEndMin = (plannedStartMin != null && goalMin != null) ? plannedStartMin + goalMin : null;
+      final plannedEndMin = (plannedStartMin != null) ? plannedStartMin + goalMin : null;
 
       var nextOrderIndex = 0;
       for (final task in tasks) {
@@ -488,24 +500,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  String _plannedWindow(Task task) {
+  String _formatClock(BuildContext context, int minutes) {
+    final hour = (minutes ~/ 60) % 24;
+    final minute = minutes % 60;
+    return MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
+  }
+
+  String _plannedWindow(BuildContext context, Task task) {
     final start = task.plannedStartMin;
     final end = task.plannedEndMin;
     if (start == null || end == null) return '—';
-    return '${_formatClock(start)}–${_formatClock(end)}';
-  }
-
-  String _formatClock(int minutes) {
-    final h = (minutes ~/ 60) % 24;
-    final m = minutes % 60;
-    return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
-  }
-
-  String _goalText(Task task) {
-    if (task.targetMin == null) {
-      return '—';
-    }
-    return '${task.targetMin} min';
+    return '${_formatClock(context, start)}–${_formatClock(context, end)}';
   }
 
   Future<void> _editStartTime(Task selected, List<Task> tasks) async {
@@ -520,9 +526,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     final newStart = picked.hour * 60 + picked.minute;
     if (oldStart == null) {
-      final duration = selected.targetMin ?? 0;
       selected.plannedStartMin = newStart;
-      selected.plannedEndMin = duration > 0 ? newStart + duration : newStart;
+      selected.plannedEndMin = selected.targetMin == null ? null : newStart + selected.targetMin!;
       await _saveTask(selected);
       setState(() {});
       return;
@@ -550,6 +555,101 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
 
     setState(() {});
+  }
+
+  Future<void> _editGoal(Task task) async {
+    final controller = TextEditingController(text: task.targetMin?.toString() ?? '');
+    int? selected;
+
+    final didSave = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Set goal (minutes)'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Minutes',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selected = int.tryParse(value);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [10, 15, 30, 40, 60].map((m) {
+                      return ChoiceChip(
+                        label: Text('$m'),
+                        selected: selected == m,
+                        onSelected: (_) {
+                          setDialogState(() {
+                            selected = m;
+                            controller.text = '$m';
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (didSave != true) {
+      controller.dispose();
+      return;
+    }
+
+    final goal = int.tryParse(controller.text.trim());
+    controller.dispose();
+    if (goal == null || goal <= 0) {
+      return;
+    }
+
+    task.targetMin = goal;
+    if (task.plannedStartMin != null) {
+      task.plannedEndMin = task.plannedStartMin! + goal;
+    }
+    await _saveTask(task);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Widget _buildTimePill(Task task, List<Task> tasks) {
+    final set = task.plannedStartMin != null && task.plannedEndMin != null;
+    return OutlinedButton.icon(
+      onPressed: () => _editStartTime(task, tasks),
+      icon: Icon(set ? Icons.edit : Icons.schedule),
+      label: Text(set ? _plannedWindow(context, task) : 'Set time'),
+    );
+  }
+
+  Widget _buildGoalPill(Task task) {
+    final set = task.targetMin != null;
+    return OutlinedButton.icon(
+      onPressed: () => _editGoal(task),
+      icon: Icon(set ? Icons.edit : Icons.flag_outlined),
+      label: Text(set ? '${task.targetMin} min' : 'Set goal'),
+    );
   }
 
   Widget _buildHeaderRow() {
@@ -700,13 +800,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                       children: [
                                         SizedBox(
                                           width: _timeColumnWidth,
-                                          child: InkWell(
-                                            onTap: () => _editStartTime(task, tasks),
-                                            child: Text(
-                                              _plannedWindow(task),
-                                              style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
-                                            ),
-                                          ),
+                                          child: _buildTimePill(task, tasks),
                                         ),
                                         Expanded(
                                           child: Text(
@@ -716,7 +810,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                             ),
                                           ),
                                         ),
-                                        SizedBox(width: _goalColumnWidth, child: Text(_goalText(task))),
+                                        SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
                                         SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
                                       ],
                                     ),
@@ -739,6 +833,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Widget _buildControls(Task task, int elapsedMs) {
+    final canStart = task.plannedStartMin != null && task.targetMin != null;
     switch (task.status) {
       case 'running':
         return Row(
@@ -757,7 +852,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
           children: [
             Text(_formatDuration(elapsedMs)),
             const SizedBox(width: 6),
-            TextButton(onPressed: () => _startTask(task), child: const Text('Start')),
+            TextButton(onPressed: canStart ? () => _startTask(task) : null, child: const Text('Start')),
             const SizedBox(width: 2),
             FilledButton.tonal(onPressed: () => _doneTask(task), child: const Text('Done')),
           ],
@@ -773,7 +868,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         );
       case 'not_started':
       default:
-        return TextButton(onPressed: () => _startTask(task), child: const Text('Start'));
+        return TextButton(onPressed: canStart ? () => _startTask(task) : null, child: const Text('Start'));
     }
   }
 }

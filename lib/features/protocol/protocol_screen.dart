@@ -43,6 +43,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const double _goalColumnWidth = 130;
   static const double _controlColumnWidth = 220;
   static const int _taskTitleMaxChars = 40;
+  static const Set<String> _mandatoryRitualTitles = {
+    'Walk',
+    'Transition (Light meal / half-caff + cold water)',
+    'Desk + Mantra',
+    'Brain Dump',
+  };
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
@@ -51,6 +57,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   late final Timer _timer;
 
   bool _alwaysOnTop = false;
+  bool _deleteMode = false;
   int _planId = _todayPlanId();
   String _selectedThemeId = _defaultThemeId;
   String _mantraLine1 = _defaultLine1;
@@ -769,7 +776,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _deleteTask(Task task, List<Task> tasks) async {
-    if (task.type == 'ritual') return;
+    if (_isMandatoryTask(task)) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -797,7 +804,33 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
 
     _runningSince.remove(task.id);
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _deleteMode = remaining.any((item) => !_isMandatoryTask(item)) && _deleteMode;
+      });
+    }
+  }
+
+
+  bool _isMandatoryTask(Task task) {
+    return _mandatoryRitualTitles.contains(task.title);
+  }
+
+  List<Task> _deletableTasks(List<Task> tasks) {
+    return tasks.where((task) => !_isMandatoryTask(task)).toList();
+  }
+
+  String _taskEmoji(Task task) {
+    final lower = task.title.toLowerCase();
+    if (lower.startsWith('walk')) return '🚶';
+    if (lower.startsWith('transition')) return '⚡';
+    if (lower.startsWith('desk + mantra')) return '🪑';
+    if (lower.startsWith('brain dump')) return '🧠';
+    if (lower.contains('reading')) return '📖';
+    if (lower.contains('writing')) return '✍️';
+    if (lower.contains('coding')) return '💻';
+    if (lower.contains('job') || lower.contains('outreach')) return '📬';
+    return '✅';
   }
 
   Future<void> _onTaskMenuSelected(String action, Task task, List<Task> tasks) async {
@@ -823,6 +856,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       child: Row(
         children: const [
           SizedBox(width: _timeColumnWidth, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(width: 16),
           Expanded(child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
           SizedBox(width: _goalColumnWidth, child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold))),
           SizedBox(width: _controlColumnWidth, child: Text('Control', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -851,32 +885,48 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Widget _buildRunningBanner(Task task, int elapsedMs) {
-    return Align(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(999),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _formatDuration(elapsedMs),
-              style: const TextStyle(fontWeight: FontWeight.w800),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 3)),
+              ],
             ),
-            const SizedBox(width: 10),
-            Text(
-              task.title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _formatDuration(elapsedMs),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${_taskEmoji(task)} ${task.title}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(onPressed: () => _pauseTask(task), child: const Text('Pause')),
+              ],
             ),
-            const SizedBox(width: 10),
-            FilledButton.tonal(onPressed: () => _pauseTask(task), child: const Text('Pause')),
-          ],
+          ),
         ),
       ),
     );
@@ -1029,6 +1079,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                             FilledButton.tonal(onPressed: () => _openAddTaskDialog(tasks), child: const Text('Add Task')),
                             const SizedBox(width: 8),
                             OutlinedButton(
+                              onPressed: _deletableTasks(tasks).isEmpty
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _deleteMode = !_deleteMode;
+                                      });
+                                    },
+                              child: Text(_deleteMode ? 'Done Deleting' : 'Delete Task'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
                               onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
                               child: const Text('Reset Today'),
                             ),
@@ -1038,19 +1099,32 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       _buildHeaderRow(),
                       const Divider(height: 1),
                       Expanded(
-                        child: ListView.separated(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
                           itemCount: tasks.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             final task = tasks[index];
                             final elapsed = _elapsedMs(task, tick);
-                            return Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 16),
                                   Expanded(
                                     child: InkWell(
                                       onTap: () => _editTaskName(task),
@@ -1058,8 +1132,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(vertical: 4),
                                         child: Text(
-                                          task.title,
+                                          '${_taskEmoji(task)} ${task.title}',
                                           style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 15,
                                             decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
                                           ),
                                         ),
@@ -1069,16 +1145,27 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
                                   SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
                                   SizedBox(
-                                    width: 44,
-                                    child: PopupMenuButton<String>(
-                                      tooltip: 'Task actions',
-                                      onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
-                                      itemBuilder: (context) => [
-                                        const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
-                                        const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
-                                        const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
-                                        if (task.type != 'ritual')
-                                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                    width: _deleteMode && !_isMandatoryTask(task) ? 80 : 44,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        if (_deleteMode && !_isMandatoryTask(task))
+                                          IconButton(
+                                            tooltip: 'Delete task',
+                                            onPressed: () => _deleteTask(task, tasks),
+                                            icon: const Icon(Icons.delete_outline),
+                                          ),
+                                        PopupMenuButton<String>(
+                                          tooltip: 'Task actions',
+                                          onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
+                                          itemBuilder: (context) => [
+                                            const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
+                                            const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
+                                            const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
+                                            if (!_isMandatoryTask(task))
+                                              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                          ],
+                                        ),
                                       ],
                                     ),
                                   ),

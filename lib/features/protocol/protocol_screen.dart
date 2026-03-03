@@ -486,6 +486,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       await isar.writeTxn(() async {
         await isar.tasks.put(newTask);
       });
+
+      final updatedTasks = await _loadPlanTasks();
+      await _sortTasksByStartTime(updatedTasks);
       if (mounted) setState(() {});
     }
 
@@ -559,6 +562,30 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     });
   }
 
+  Future<void> _sortTasksByStartTime(List<Task> tasks) async {
+    tasks.sort((a, b) {
+      final aStart = a.plannedStartMin;
+      final bStart = b.plannedStartMin;
+      if (aStart == null && bStart == null) {
+        return a.orderIndex.compareTo(b.orderIndex);
+      }
+      if (aStart == null) return 1;
+      if (bStart == null) return -1;
+      final byStart = aStart.compareTo(bStart);
+      if (byStart != 0) return byStart;
+      return a.orderIndex.compareTo(b.orderIndex);
+    });
+
+    for (var i = 0; i < tasks.length; i++) {
+      tasks[i].orderIndex = i;
+    }
+
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.putAll(tasks);
+    });
+  }
+
   Task? _activeSessionTask(List<Task> tasks) {
     for (final task in tasks) {
       if (task.status == 'running') return task;
@@ -610,30 +637,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (picked == null) return;
 
     final newStart = picked.hour * 60 + picked.minute;
-    if (oldStart == null) {
-      selected.plannedStartMin = newStart;
-      selected.plannedEndMin = selected.targetMin == null ? null : newStart + selected.targetMin!;
-      await _saveTask(selected);
-      setState(() {});
-      return;
-    }
+    if (oldStart == newStart) return;
 
-    final delta = newStart - oldStart;
-    if (delta == 0) return;
-
-    final changed = <Task>[];
-    for (final task in tasks) {
-      if (task.orderIndex < selected.orderIndex) continue;
-      if (task.plannedStartMin == null || task.plannedEndMin == null) continue;
-      task.plannedStartMin = task.plannedStartMin! + delta;
-      task.plannedEndMin = task.plannedEndMin! + delta;
-      changed.add(task);
-    }
-
-    final isar = await IsarDb.instance();
-    await isar.writeTxn(() async {
-      await isar.tasks.putAll(changed);
-    });
+    selected.plannedStartMin = newStart;
+    selected.plannedEndMin = selected.targetMin == null ? null : newStart + selected.targetMin!;
+    await _sortTasksByStartTime(tasks);
     setState(() {});
   }
 

@@ -353,11 +353,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final titleController = TextEditingController();
     final goalController = TextEditingController();
     TimeOfDay? plannedStart;
-    TimeOfDay? plannedEnd;
     String? titleError;
     String? goalError;
     String? startError;
-    String? endError;
 
     final didSave = await showDialog<bool>(
       context: context,
@@ -425,37 +423,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                           style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                         ),
                       ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(plannedEnd == null ? 'Planned end: —' : 'Planned end: ${plannedEnd!.format(context)}'),
-                        ),
-                        TextButton(
-                          onPressed: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: plannedEnd ?? plannedStart ?? const TimeOfDay(hour: 9, minute: 30),
-                            );
-                            if (picked != null) {
-                              setDialogState(() {
-                                plannedEnd = picked;
-                                endError = null;
-                              });
-                            }
-                          },
-                          child: const Text('Pick end'),
-                        ),
-                      ],
-                    ),
-                    if (endError != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          endError!,
-                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -467,16 +434,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     final missingTitle = titleController.text.trim().isEmpty;
                     final missingGoal = parsed == null || parsed <= 0;
                     final missingStart = plannedStart == null;
-                    final missingEnd = plannedEnd == null;
-                    final invalidRange = !missingStart && !missingEnd
-                        ? plannedStart!.hour * 60 + plannedStart!.minute >= plannedEnd!.hour * 60 + plannedEnd!.minute
-                        : false;
-                    if (missingTitle || missingGoal || missingStart || missingEnd || invalidRange) {
+                    if (missingTitle || missingGoal || missingStart) {
                       setDialogState(() {
                         titleError = missingTitle ? 'Title is required' : null;
                         goalError = missingGoal ? 'Goal minutes required' : null;
                         startError = missingStart ? 'Planned start required' : null;
-                        endError = missingEnd ? 'Planned end required' : (invalidRange ? 'End time must be after start time' : null);
                       });
                       return;
                     }
@@ -495,7 +457,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
       final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
-      final endMin = plannedEnd!.hour * 60 + plannedEnd!.minute;
+      final endMin = startMin + goalMin;
 
       var nextOrderIndex = 0;
       for (final task in tasks) {

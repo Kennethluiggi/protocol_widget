@@ -37,11 +37,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
   static const String _defaultThemeId = 'clouds';
 
-  static const List<String> _themeOptions = ['clouds', 'books', 'steel', 'minimal'];
+  static const List<String> _themeOptions = ['clouds', 'books', 'aggressive', 'minimal'];
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;
   static const double _controlColumnWidth = 220;
+  static const int _taskTitleMaxChars = 40;
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
@@ -345,9 +346,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final titleController = TextEditingController();
     final goalController = TextEditingController();
     TimeOfDay? plannedStart;
+    TimeOfDay? plannedEnd;
     String? titleError;
     String? goalError;
     String? startError;
+    String? endError;
 
     final didSave = await showDialog<bool>(
       context: context,
@@ -362,8 +365,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                   children: [
                     TextField(
                       controller: titleController,
+                      maxLength: _taskTitleMaxChars,
+                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                      inputFormatters: [LengthLimitingTextInputFormatter(_taskTitleMaxChars)],
                       decoration: InputDecoration(
-                        labelText: 'Title *',
+                        labelText: 'Task name *',
                         border: const OutlineInputBorder(),
                         errorText: titleError,
                       ),
@@ -412,6 +418,37 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                           style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                         ),
                       ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(plannedEnd == null ? 'Planned end: —' : 'Planned end: ${plannedEnd!.format(context)}'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: context,
+                              initialTime: plannedEnd ?? plannedStart ?? const TimeOfDay(hour: 9, minute: 30),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                plannedEnd = picked;
+                                endError = null;
+                              });
+                            }
+                          },
+                          child: const Text('Pick end'),
+                        ),
+                      ],
+                    ),
+                    if (endError != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          endError!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -423,11 +460,16 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     final missingTitle = titleController.text.trim().isEmpty;
                     final missingGoal = parsed == null || parsed <= 0;
                     final missingStart = plannedStart == null;
-                    if (missingTitle || missingGoal || missingStart) {
+                    final missingEnd = plannedEnd == null;
+                    final invalidRange = !missingStart && !missingEnd
+                        ? plannedStart!.hour * 60 + plannedStart!.minute >= plannedEnd!.hour * 60 + plannedEnd!.minute
+                        : false;
+                    if (missingTitle || missingGoal || missingStart || missingEnd || invalidRange) {
                       setDialogState(() {
                         titleError = missingTitle ? 'Title is required' : null;
                         goalError = missingGoal ? 'Goal minutes required' : null;
                         startError = missingStart ? 'Planned start required' : null;
+                        endError = missingEnd ? 'Planned end required' : (invalidRange ? 'End time must be after start time' : null);
                       });
                       return;
                     }
@@ -446,6 +488,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
       final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
+      final endMin = plannedEnd!.hour * 60 + plannedEnd!.minute;
 
       var nextOrderIndex = 0;
       for (final task in tasks) {
@@ -459,7 +502,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         ..title = title
         ..targetMin = goalMin
         ..plannedStartMin = startMin
-        ..plannedEndMin = startMin + goalMin
+        ..plannedEndMin = endMin
         ..status = 'not_started';
 
       final isar = await IsarDb.instance();
@@ -673,15 +716,117 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _editTaskName(Task task) async {
+    final controller = TextEditingController(text: task.title);
+    String? error;
+
+    final didSave = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit task name'),
+              content: TextField(
+                controller: controller,
+                maxLength: _taskTitleMaxChars,
+                maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                inputFormatters: [LengthLimitingTextInputFormatter(_taskTitleMaxChars)],
+                decoration: InputDecoration(
+                  labelText: 'Task name *',
+                  border: const OutlineInputBorder(),
+                  errorText: error,
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    final value = controller.text.trim();
+                    if (value.isEmpty) {
+                      setDialogState(() {
+                        error = 'Task name is required';
+                      });
+                      return;
+                    }
+                    Navigator.of(context).pop(true);
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (didSave == true) {
+      task.title = controller.text.trim();
+      await _saveTask(task);
+      if (mounted) setState(() {});
+    }
+    controller.dispose();
+  }
+
+  Future<void> _deleteTask(Task task, List<Task> tasks) async {
+    if (task.type == 'ritual') return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete task?'),
+        content: Text('Delete "${task.title}"? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          FilledButton.tonal(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final remaining = tasks.where((t) => t.id != task.id).toList()..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    for (var i = 0; i < remaining.length; i++) {
+      remaining[i].orderIndex = i;
+    }
+
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.delete(task.id);
+      await isar.tasks.putAll(remaining);
+    });
+
+    _runningSince.remove(task.id);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _onTaskMenuSelected(String action, Task task, List<Task> tasks) async {
+    switch (action) {
+      case 'edit_name':
+        await _editTaskName(task);
+        break;
+      case 'edit_time':
+        await _editStartTime(task, tasks);
+        break;
+      case 'edit_goal':
+        await _editGoal(task);
+        break;
+      case 'delete':
+        await _deleteTask(task, tasks);
+        break;
+    }
+  }
+
   Widget _buildHeaderRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: const [
           SizedBox(width: _timeColumnWidth, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
-          Expanded(child: Text('Action', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
           SizedBox(width: _goalColumnWidth, child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold))),
           SizedBox(width: _controlColumnWidth, child: Text('Control', style: TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(width: 44),
         ],
       ),
     );
@@ -706,29 +851,33 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Widget _buildRunningBanner(Task task, int elapsedMs) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(task.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text(
-                  task.targetMin == null ? _formatDuration(elapsedMs) : '${_formatDuration(elapsedMs)} • Goal ${task.targetMin}m',
-                ),
-              ],
+    return Align(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _formatDuration(elapsedMs),
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
-          ),
-          TextButton(onPressed: () => _pauseTask(task), child: const Text('Pause')),
-          FilledButton.tonal(onPressed: () => _doneTask(task), child: const Text('Done')),
-        ],
+            const SizedBox(width: 10),
+            Text(
+              task.title,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 10),
+            FilledButton.tonal(onPressed: () => _pauseTask(task), child: const Text('Pause')),
+          ],
+        ),
       ),
     );
   }
@@ -901,16 +1050,38 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
+                                  const SizedBox(width: 12),
                                   Expanded(
-                                    child: Text(
-                                      task.title,
-                                      style: TextStyle(
-                                        decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                                    child: InkWell(
+                                      onTap: () => _editTaskName(task),
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 4),
+                                        child: Text(
+                                          task.title,
+                                          style: TextStyle(
+                                            decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
                                   SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
                                   SizedBox(width: _controlColumnWidth, child: _buildControls(task, elapsed)),
+                                  SizedBox(
+                                    width: 44,
+                                    child: PopupMenuButton<String>(
+                                      tooltip: 'Task actions',
+                                      onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
+                                      itemBuilder: (context) => [
+                                        const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
+                                        const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
+                                        const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
+                                        if (task.type != 'ritual')
+                                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             );

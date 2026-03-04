@@ -391,8 +391,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (enabled) {
       _fullModeWindowSize ??= await windowManager.getSize();
       _widgetModeSize ??= Size(_fullModeWindowSize!.width, 320);
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
       await windowManager.setResizable(true);
-      await windowManager.setAsFrameless();
       await windowManager.setBackgroundColor(Colors.transparent);
       await windowManager.setSize(_widgetModeSize!);
       return;
@@ -1294,10 +1294,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                 ),
                                 Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
                                 if (_widgetMode)
-                                  Positioned.fill(
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    top: 0,
+                                    height: 54,
                                     child: GestureDetector(
                                       behavior: HitTestBehavior.translucent,
-                                      onPanStart: (_) => windowManager.startDragging(),
+                                      onPanStart: (_) {
+                                        if (_isDesktopPlatform()) {
+                                          windowManager.startDragging();
+                                        }
+                                      },
                                     ),
                                   ),
                                 Padding(
@@ -1403,10 +1411,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                     child: MouseRegion(
                                       cursor: SystemMouseCursors.resizeUpLeftDownRight,
                                       child: GestureDetector(
-                                        onPanUpdate: _resizeWidgetMode,
+                                        onPanStart: (_) {
+                                          if (_isDesktopPlatform()) {
+                                            windowManager.startResizing(ResizeEdge.bottomRight);
+                                          }
+                                        },
                                         child: Container(
-                                          width: 16,
-                                          height: 16,
+                                          width: 18,
+                                          height: 18,
                                           decoration: BoxDecoration(
                                             color: Colors.white.withValues(alpha: 0.35),
                                             borderRadius: BorderRadius.circular(4),
@@ -1453,13 +1465,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   ),
                                 ),
                                 Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
-                                if (_widgetMode)
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.translucent,
-                                      onPanStart: (_) => windowManager.startDragging(),
-                                    ),
-                                  ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                                   child: Column(

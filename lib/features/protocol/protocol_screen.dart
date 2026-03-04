@@ -412,13 +412,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         ),
                         TextButton(
                           onPressed: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: plannedStart ?? const TimeOfDay(hour: 9, minute: 0),
+                            final picked = await _pickValidStartTime(
+                              tasks: tasks,
+                              isRitualTask: false,
+                              initialMinutes: plannedStart == null ? null : plannedStart!.hour * 60 + plannedStart!.minute,
                             );
                             if (picked != null) {
                               setDialogState(() {
-                                plannedStart = picked;
+                                plannedStart = TimeOfDay(hour: picked ~/ 60, minute: picked % 60);
                                 startError = null;
                               });
                             }
@@ -468,9 +469,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (didSave == true) {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
-      final pickedStart = plannedStart!.hour * 60 + plannedStart!.minute;
-      final threshold = _nonRitualStartThreshold(tasks);
-      final startMin = threshold != null && pickedStart < threshold ? threshold : pickedStart;
+      final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
       final endMin = startMin + goalMin;
 
       var nextOrderIndex = 0;
@@ -577,17 +576,46 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   int? _nonRitualStartThreshold(List<Task> tasks) {
-    int? walkStart;
-    int? brainDumpEnd;
     for (final task in tasks) {
-      if (task.title == _walkTitle) {
-        walkStart = task.plannedStartMin;
-      }
-      if (task.title == _brainDumpTitle) {
-        brainDumpEnd = task.plannedEndMin;
+      if (task.title != _brainDumpTitle) continue;
+      if (task.plannedEndMin != null) return task.plannedEndMin;
+      if (task.plannedStartMin != null && task.targetMin != null) {
+        return task.plannedStartMin! + task.targetMin!;
       }
     }
-    return brainDumpEnd ?? walkStart;
+    return null;
+  }
+
+  Future<int?> _pickValidStartTime({
+    required List<Task> tasks,
+    required bool isRitualTask,
+    int? initialMinutes,
+  }) async {
+    var nextInitial = initialMinutes ?? 540;
+    while (true) {
+      final picked = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay(hour: nextInitial ~/ 60, minute: nextInitial % 60),
+      );
+      if (picked == null) return null;
+
+      final pickedStart = picked.hour * 60 + picked.minute;
+      final threshold = isRitualTask ? null : _nonRitualStartThreshold(tasks);
+      if (threshold != null && pickedStart < threshold) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'You can’t schedule tasks before your 4 mandatory locked tasks. Choose a time after your ritual.',
+              ),
+            ),
+          );
+        }
+        nextInitial = threshold;
+        continue;
+      }
+      return pickedStart;
+    }
   }
 
   Future<void> _sortTasksByStartTime(List<Task> tasks) async {
@@ -674,16 +702,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Future<void> _editStartTime(Task selected, List<Task> tasks) async {
     final oldStart = selected.plannedStartMin;
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: (oldStart ?? 540) ~/ 60, minute: (oldStart ?? 540) % 60),
+    final newStart = await _pickValidStartTime(
+      tasks: tasks,
+      isRitualTask: _isMandatoryTask(selected),
+      initialMinutes: oldStart,
     );
-    if (picked == null) return;
-
-    final pickedStart = picked.hour * 60 + picked.minute;
-    final threshold = _isMandatoryTask(selected) ? null : _nonRitualStartThreshold(tasks);
-    final newStart = threshold != null && pickedStart < threshold ? threshold : pickedStart;
-    if (oldStart == newStart) return;
+    if (newStart == null || oldStart == newStart) return;
 
     selected.plannedStartMin = newStart;
     selected.plannedEndMin = selected.targetMin == null ? null : newStart + selected.targetMin!;
@@ -893,6 +917,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         children: const [
+          SizedBox(width: 24),
+          SizedBox(width: 8),
           SizedBox(width: _timeColumnWidth, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
           SizedBox(width: 16),
           Expanded(child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -1166,6 +1192,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
+                                  SizedBox(
+                                    width: 24,
+                                    child: _isMandatoryTask(task) ? const Icon(Icons.lock, size: 16) : null,
+                                  ),
+                                  const SizedBox(width: 8),
                                   SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
                                   const SizedBox(width: 16),
                                   Expanded(

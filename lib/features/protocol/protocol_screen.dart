@@ -83,11 +83,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
-  bool _isExitingWidgetMode = false;
 
   // Guard flags to avoid repeated window ops.
   bool _appliedInitialNormalBounds = false;
   bool _centeredWidgetOnce = false;
+  bool _isExitingWidgetMode = false;
   Size? _fullModeWindowSize;
   Size? _widgetModeSize;
   int? _lastNormalSizedTaskCount;
@@ -127,6 +127,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     // This fixes the “can’t expand width until toggling widget mode” behavior.
     if (!_widgetMode && !_appliedInitialNormalBounds && _isDesktopPlatform()) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
         if (!mounted) return;
         await _applyNormalBoundsOnlyOnce();
       });
@@ -253,6 +255,19 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     // Entering widget mode: flip UI state, then apply widget window state.
     if (!mounted) return;
+    if (!value) {
+      setState(() {
+        _widgetMode = false;
+        _isExitingWidgetMode = true;
+      });
+      await _applyWidgetModeWindowState(false);
+      if (!mounted) return;
+      setState(() {
+        _isExitingWidgetMode = false;
+      });
+      return;
+    }
+
     setState(() {
       _widgetMode = true;
     });
@@ -567,35 +582,33 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       _fullModeWindowSize ??= await windowManager.getSize();
 
       _widgetModeSize ??= Size(
-        _widgetDefaultWidth
-            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
-            .toDouble(),
-        _widgetDefaultHeight
-            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
-            .toDouble(),
+        _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
       );
 
       // Apply bounds first.
-      await windowManager.setMinimumSize(
-        Size(widgetBounds.minWidth, widgetBounds.minHeight),
-      );
-      await windowManager.setMaximumSize(
-        Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
-      );
+      await windowManager.setMinimumSize(Size(widgetBounds.minWidth, widgetBounds.minHeight));
+      await windowManager.setMaximumSize(Size(widgetBounds.maxWidth, widgetBounds.maxHeight));
 
       // Style changes (do not reorder).
-      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      try {
+        await windowManager.setTitleBarStyle(
+          TitleBarStyle.hidden,
+          windowButtonVisibility: false,
+        );
+      } catch (_) {
+        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      }
       await windowManager.setResizable(true);
+      try {
+        await windowManager.setHasShadow(false);
+      } catch (_) {}
       await windowManager.setBackgroundColor(Colors.transparent);
 
       // Compute final target size ONCE, clamp ONCE, set ONCE.
       final target = Size(
-        _widgetModeSize!.width
-            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
-            .toDouble(),
-        _widgetModeSize!.height
-            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
-            .toDouble(),
+        _widgetModeSize!.width.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        _widgetModeSize!.height.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
       );
       _widgetModeSize = target;
 
@@ -613,26 +626,28 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     // Exiting widget mode -> restore normal bounds and style.
     final normalBounds = _normalWindowBounds();
 
-    await windowManager.setMinimumSize(
-      Size(normalBounds.minWidth, normalBounds.minHeight),
-    );
-    await windowManager.setMaximumSize(
-      Size(normalBounds.maxWidth, normalBounds.maxHeight),
-    );
-
-    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    try {
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.normal,
+        windowButtonVisibility: true,
+      );
+    } catch (_) {
+      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    }
     await windowManager.setResizable(true);
+    try {
+      await windowManager.setHasShadow(true);
+    } catch (_) {}
     await windowManager.setBackgroundColor(Colors.white);
+
+    await windowManager.setMinimumSize(Size(normalBounds.minWidth, normalBounds.minHeight));
+    await windowManager.setMaximumSize(Size(normalBounds.maxWidth, normalBounds.maxHeight));
 
     final restoreSize = _fullModeWindowSize;
     if (restoreSize != null) {
       final clamped = Size(
-        restoreSize.width
-            .clamp(normalBounds.minWidth, normalBounds.maxWidth)
-            .toDouble(),
-        restoreSize.height
-            .clamp(normalBounds.minHeight, normalBounds.maxHeight)
-            .toDouble(),
+        restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
+        restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
       );
       await windowManager.setSize(clamped);
     }
@@ -651,10 +666,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     _appliedInitialNormalBounds = true;
 
     final normalBounds = _normalWindowBounds();
-
-    // Force normal window chrome/state in case it was left hidden.
-    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    try {
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.normal,
+        windowButtonVisibility: true,
+      );
+    } catch (_) {
+      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    }
     await windowManager.setResizable(true);
+    try {
+      await windowManager.setHasShadow(true);
+    } catch (_) {}
     await windowManager.setBackgroundColor(Colors.white);
 
     await windowManager.setMinimumSize(Size(normalBounds.minWidth, normalBounds.minHeight));
@@ -1965,90 +1988,110 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                     12,
                                   ),
                                   child: ClipRect(
-                                    child: Column(
-                                      children: [
-                                        if (!_widgetMode)
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children: [
-                                              TextButton(
-                                                onPressed:
-                                                    _openThemePickerDialog,
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor: Colors.white,
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        return SingleChildScrollView(
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          child: ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              minHeight: constraints.maxHeight,
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                if (!_widgetMode)
+                                                  Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.end,
+                                                    children: [
+                                                      TextButton(
+                                                        onPressed:
+                                                            _openThemePickerDialog,
+                                                        style: TextButton.styleFrom(
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                        ),
+                                                        child: const Text(
+                                                          'Theme',
+                                                        ),
+                                                      ),
+                                                      TextButton(
+                                                        onPressed:
+                                                            _openEditMantraDialog,
+                                                        style: TextButton.styleFrom(
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                        ),
+                                                        child: const Text(
+                                                          'Edit',
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                Text(
+                                                  _mantraLine1,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 0.8,
+                                                  ),
                                                 ),
-                                                child: const Text('Theme'),
-                                              ),
-                                              TextButton(
-                                                onPressed:
-                                                    _openEditMantraDialog,
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor: Colors.white,
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  _mantraLine2,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w600,
+                                                    letterSpacing: 0.6,
+                                                  ),
                                                 ),
-                                                child: const Text('Edit'),
-                                              ),
-                                            ],
-                                          ),
-                                        Text(
-                                          _mantraLine1,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 0.8,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          _mantraLine2,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                            letterSpacing: 0.6,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          _mantraLine3,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            letterSpacing: 0.4,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 10,
-                                            horizontal: 12,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.16,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  _mantraLine3,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w500,
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 10,
+                                                        horizontal: 12,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.16),
+                                                    borderRadius:
+                                                        BorderRadius.circular(8),
+                                                  ),
+                                                  child: Text(
+                                                    _mantraLine4,
+                                                    textAlign:
+                                                        TextAlign.center,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 24,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      letterSpacing: 0.6,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                          child: Text(
-                                            _mantraLine4,
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.w900,
-                                              letterSpacing: 0.6,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),

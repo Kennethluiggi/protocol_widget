@@ -63,6 +63,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
+  Size? _fullModeWindowSize;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
   String _selectedThemeId = _defaultThemeId;
@@ -91,6 +92,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     await _ensureTodayRitualTasks();
     await _loadAlwaysOnTop();
     await _loadWidgetMode();
+    await _applyWidgetModeWindowState(_widgetMode);
     await _loadMantra();
     await _loadTheme();
   }
@@ -193,6 +195,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     setState(() {
       _widgetMode = value;
     });
+    await _applyWidgetModeWindowState(value);
   }
 
   Future<void> _setAlwaysOnTop(bool value) async {
@@ -371,6 +374,28 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _applyAlwaysOnTop(bool value) async {
     if (!(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) return;
     await windowManager.setAlwaysOnTop(value);
+  }
+
+  bool _isDesktopPlatform() {
+    return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  }
+
+  Future<void> _applyWidgetModeWindowState(bool enabled) async {
+    if (!_isDesktopPlatform()) return;
+
+    if (enabled) {
+      _fullModeWindowSize ??= await windowManager.getSize();
+      final width = _fullModeWindowSize?.width ?? 980;
+      await windowManager.setBackgroundColor(Colors.transparent);
+      await windowManager.setSize(Size(width, 320));
+      return;
+    }
+
+    await windowManager.setBackgroundColor(ThemeData.light().scaffoldBackgroundColor);
+    final restoreSize = _fullModeWindowSize;
+    if (restoreSize != null) {
+      await windowManager.setSize(restoreSize);
+    }
   }
 
   Future<List<Task>> _loadPlanTasks() async {
@@ -1146,6 +1171,42 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     );
   }
 
+  Widget _buildWidgetModeTaskStrip(Task? activeSession, int elapsedMs) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: activeSession == null
+          ? const Text('No active task', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))
+          : Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_taskEmoji(activeSession)} ${activeSession.title} • ${_formatDuration(elapsedMs)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: Colors.white),
+                  onPressed: activeSession.status == 'running' ? () => _pauseTask(activeSession) : () => _startTask(activeSession),
+                  child: Text(activeSession.status == 'running' ? 'Pause' : 'Resume'),
+                ),
+                FilledButton.tonal(
+                  style: FilledButton.styleFrom(backgroundColor: colorScheme.surface.withValues(alpha: 0.85)),
+                  onPressed: () => _doneTask(activeSession),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
@@ -1156,7 +1217,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         }
 
         return Scaffold(
-          appBar: AppBar(
+          backgroundColor: _widgetMode ? Colors.transparent : null,
+          appBar: _widgetMode
+              ? null
+              : AppBar(
             title: const Text('Protocol Table'),
             actions: [
               Row(
@@ -1184,7 +1248,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                   final activeSession = _activeSessionTask(tasks);
                   return Column(
                     children: [
-                      if (activeSession != null) _buildRunningBanner(activeSession, _elapsedMs(activeSession, tick)),
+                      if (!_widgetMode && activeSession != null) _buildRunningBanner(activeSession, _elapsedMs(activeSession, tick)),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: Container(
@@ -1284,24 +1348,32 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                     ],
                                   ),
                                 ),
+                                if (_widgetMode)
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: FilledButton.tonalIcon(
+                                      onPressed: () => _setWidgetMode(false),
+                                      icon: const Icon(Icons.open_in_full, size: 16),
+                                      label: const Text('Expand'),
+                                    ),
+                                  ),
+                                if (_widgetMode)
+                                  Positioned(
+                                    left: 12,
+                                    right: 12,
+                                    bottom: 10,
+                                    child: _buildWidgetModeTaskStrip(
+                                      activeSession,
+                                      activeSession == null ? 0 : _elapsedMs(activeSession, tick),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
                         ),
                       ),
-                      if (_widgetMode)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: OutlinedButton.icon(
-                              onPressed: () => _setWidgetMode(false),
-                              icon: const Icon(Icons.open_in_full),
-                              label: const Text('Expand full mode'),
-                            ),
-                          ),
-                        )
-                      else
+                      if (!_widgetMode)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                           child: Row(
@@ -1425,9 +1497,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                               ),
                             ),
                           ),
-                        )
-                      else
-                        const SizedBox(height: 8),
+                        ),
                     ],
                   );
                 },

@@ -1376,7 +1376,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                             ),
                           ),
                         ),
-                      ),
                     );
                   }
 

@@ -54,6 +54,20 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     _deskMantraTitle,
     _brainDumpTitle,
   };
+  static const double _widgetMinWidth = 520;
+  static const double _widgetMinHeight = 220;
+  static const double _widgetMaxWidth = 1600;
+  static const double _widgetMaxHeight = 1000;
+  static const double _normalMinWidth = 940;
+  static const double _normalMinHeight = 640;
+  static const double _normalMaxWidth = 2200;
+  static const double _windowScreenMargin = 40;
+  static const double _normalBaseHeight = 470;
+  static const double _normalTaskRowHeight = 48;
+  static const double _widgetDefaultHeight = 300;
+  static const double _widgetDefaultWidth = 860;
+  static const double _widgetModeMinWidth = 680;
+  static const double _widgetModeMinHeight = 280;
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
@@ -64,6 +78,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
   Size? _fullModeWindowSize;
+  Size? _widgetModeSize;
+  int? _lastNormalSizedTaskCount;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
   String _selectedThemeId = _defaultThemeId;
@@ -379,49 +395,119 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   bool _isDesktopPlatform() {
     return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
   }
-  Future<void> _startWindowDrag() async {
-    if (!_isDesktopPlatform()) return;
-    await windowManager.startDragging();
+
+  Size _displayLogicalSize() {
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final display = view.display;
+    return Size(display.size.width / display.devicePixelRatio, display.size.height / display.devicePixelRatio);
   }
 
-  Future<void> _startWindowResize(ResizeEdge edge) async {
-    if (!_isDesktopPlatform()) return;
-    await windowManager.startResizing(edge);
-  }
-
-Future<void> _applyWidgetModeWindowState(bool enabled) async {
-  if (!_isDesktopPlatform()) return;
-
-  if (enabled) {
-    _fullModeWindowSize ??= await windowManager.getSize();
-    final width = _fullModeWindowSize?.width ?? 980;
-
-    // Hide title bar/buttons instead of frameless, so we can restore reliably.
-    await windowManager.setTitleBarStyle(
-      TitleBarStyle.hidden,
-      windowButtonVisibility: false,
+  BoxConstraints _normalWindowBounds() {
+    final screen = _displayLogicalSize();
+    final maxWidth = (_normalMaxWidth)
+        .clamp(_normalMinWidth, (screen.width - _windowScreenMargin).clamp(_normalMinWidth, _normalMaxWidth))
+        .toDouble();
+    final maxHeight = (screen.height - _windowScreenMargin).clamp(_normalMinHeight, screen.height).toDouble();
+    return BoxConstraints(
+      minWidth: _normalMinWidth,
+      minHeight: _normalMinHeight,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
     );
+  }
 
+  BoxConstraints _widgetWindowBounds() {
+    final screen = _displayLogicalSize();
+    final maxWidth = (_widgetMaxWidth)
+        .clamp(_widgetModeMinWidth, (screen.width - _windowScreenMargin).clamp(_widgetModeMinWidth, _widgetMaxWidth))
+        .toDouble();
+    final maxHeight = (_widgetMaxHeight)
+        .clamp(_widgetModeMinHeight, (screen.height - _windowScreenMargin).clamp(_widgetModeMinHeight, _widgetMaxHeight))
+        .toDouble();
+    return BoxConstraints(
+      minWidth: _widgetModeMinWidth,
+      minHeight: _widgetModeMinHeight,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
+  }
+
+  double _recommendedNormalHeight(int taskCount) {
+    final bounds = _normalWindowBounds();
+    final desired = _normalBaseHeight + (taskCount * _normalTaskRowHeight);
+    return desired.clamp(bounds.minHeight, bounds.maxHeight).toDouble();
+  }
+
+  Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
+    if (!_isDesktopPlatform() || _widgetMode) return;
+    if (_lastNormalSizedTaskCount == taskCount) return;
+
+    _lastNormalSizedTaskCount = taskCount;
+    final bounds = _normalWindowBounds();
+    await windowManager.setMinimumSize(Size(bounds.minWidth, bounds.minHeight));
+    await windowManager.setMaximumSize(Size(bounds.maxWidth, bounds.maxHeight));
+
+    final current = await windowManager.getSize();
+    final targetHeight = _recommendedNormalHeight(taskCount);
+    final targetWidth = current.width.clamp(bounds.minWidth, bounds.maxWidth).toDouble();
+    final next = Size(targetWidth, targetHeight);
+    await windowManager.setSize(next);
+  }
+
+  Future<void> _applyWidgetModeWindowState(bool enabled) async {
+    if (!_isDesktopPlatform()) return;
+
+    if (enabled) {
+      final widgetBounds = _widgetWindowBounds();
+      _fullModeWindowSize ??= await windowManager.getSize();
+      _widgetModeSize ??= Size(
+        _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
+      );
+      await windowManager.setMinimumSize(Size(widgetBounds.minWidth, widgetBounds.minHeight));
+      await windowManager.setMaximumSize(Size(widgetBounds.maxWidth, widgetBounds.maxHeight));
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      await windowManager.setResizable(true);
+      await windowManager.setBackgroundColor(Colors.transparent);
+      final currentWidgetSize = _widgetModeSize!;
+      final clamped = Size(
+        currentWidgetSize.width.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        currentWidgetSize.height.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
+      );
+      _widgetModeSize = clamped;
+      await windowManager.setSize(clamped);
+      await windowManager.center();
+      return;
+    }
+
+    final normalBounds = _normalWindowBounds();
+    await windowManager.setMinimumSize(Size(normalBounds.minWidth, normalBounds.minHeight));
+    await windowManager.setMaximumSize(Size(normalBounds.maxWidth, normalBounds.maxHeight));
+    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
     await windowManager.setResizable(true);
-    await windowManager.setBackgroundColor(Colors.transparent);
-    await windowManager.setSize(Size(width, 320));
-    return;
+    await windowManager.setBackgroundColor(Colors.white);
+    final restoreSize = _fullModeWindowSize;
+    if (restoreSize != null) {
+      await windowManager.setSize(
+        Size(
+          restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
+          restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
+        ),
+      );
+    }
   }
 
-  // Restore normal title bar/buttons
-  await windowManager.setTitleBarStyle(
-    TitleBarStyle.normal,
-    windowButtonVisibility: true,
-  );
-
-  await windowManager.setResizable(true);
-  await windowManager.setBackgroundColor(Colors.white);
-
-  final restoreSize = _fullModeWindowSize;
-  if (restoreSize != null) {
-    await windowManager.setSize(restoreSize);
+  Future<void> _resizeWidgetMode(DragUpdateDetails details) async {
+    if (!_widgetMode || !_isDesktopPlatform()) return;
+    final bounds = _widgetWindowBounds();
+    final current = _widgetModeSize ?? await windowManager.getSize();
+    final next = Size(
+      (current.width + details.delta.dx).clamp(bounds.minWidth, bounds.maxWidth).toDouble(),
+      (current.height + details.delta.dy).clamp(bounds.minHeight, bounds.maxHeight).toDouble(),
+    );
+    _widgetModeSize = next;
+    await windowManager.setSize(next);
   }
-}
 
   Future<List<Task>> _loadPlanTasks() async {
     final localTodayPlanId = _todayPlanId();
@@ -431,7 +517,9 @@ Future<void> _applyWidgetModeWindowState(bool enabled) async {
     }
 
     final isar = await IsarDb.instance();
-    return isar.tasks.filter().planIdEqualTo(_planId).sortByOrderIndex().findAll();
+    final tasks = await isar.tasks.filter().planIdEqualTo(_planId).sortByOrderIndex().findAll();
+    await _applyNormalWindowSizingForTasks(tasks.length);
+    return tasks;
   }
 
   Future<void> _openAddTaskDialog(List<Task> tasks) async {
@@ -1271,153 +1359,172 @@ Future<void> _applyWidgetModeWindowState(bool enabled) async {
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
                   final activeSession = _activeSessionTask(tasks);
-                if (_widgetMode) {
-                  return SizedBox.expand(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Stack(
-                        children: [
-                          // Background image
-                          Positioned.fill(
-                            child: Image.asset(
-                              'assets/themes/$_selectedThemeId.png',
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  if (_widgetMode) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 12,
+                                offset: const Offset(0, 5),
                               ),
-                            ),
+                            ],
                           ),
-
-                          // Dark overlay
-                          Positioned.fill(
-                            child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                          ),
-
-                          // DRAG LAYER (behind controls)
-                          // This allows dragging the widget around without stealing taps from buttons.
-                          Positioned.fill(
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onPanStart: (_) => _startWindowDrag(),
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-
-                          // CONTENT
-                          Padding(
-                            // Keep this small so you don't create a big invisible border
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                            child: Column(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Stack(
                               children: [
-                                // top spacing reserved for the Expand button area
-                                const SizedBox(height: 4),
-
-                                Text(
-                                  _mantraLine1,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.8,
+                                Positioned.fill(
+                                  child: Image.asset(
+                                    'assets/themes/$_selectedThemeId.png',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  _mantraLine2,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _mantraLine3,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    letterSpacing: 0.4,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.16),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    _mantraLine4,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.6,
+                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
+                                if (_widgetMode)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    top: 0,
+                                    height: 54,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.translucent,
+                                      onPanStart: (_) {
+                                        if (_isDesktopPlatform()) {
+                                          windowManager.startDragging();
+                                        }
+                                      },
                                     ),
                                   ),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                                  child: Column(
+                                    children: [
+                                      if (!_widgetMode)
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          children: [
+                                            TextButton(
+                                              onPressed: _openThemePickerDialog,
+                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                              child: const Text('Theme'),
+                                            ),
+                                            TextButton(
+                                              onPressed: _openEditMantraDialog,
+                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                              child: const Text('Edit'),
+                                            ),
+                                          ],
+                                        ),
+                                      Text(
+                                        _mantraLine1,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _mantraLine2,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.6,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _mantraLine3,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 0.4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.16),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          _mantraLine4,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.6,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-
-                                const Spacer(),
-
-                                // Task strip at bottom-left
-                                Align(
-                                  alignment: Alignment.bottomLeft,
-                                  child: SizedBox(
-                                    width: 420,
+                                if (_widgetMode)
+                                  Positioned(
+                                    top: 10,
+                                    right: 10,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.3),
+                                        borderRadius: BorderRadius.circular(999),
+                                      ),
+                                      child: IconButton(
+                                        tooltip: 'Expand full mode',
+                                        onPressed: () => _setWidgetMode(false),
+                                        icon: const Icon(Icons.open_in_full, size: 16, color: Colors.white),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ),
+                                  ),
+                                if (_widgetMode)
+                                  Positioned(
+                                    left: 12,
+                                    right: 56,
+                                    bottom: 10,
                                     child: _buildWidgetModeTaskStrip(
                                       activeSession,
                                       activeSession == null ? 0 : _elapsedMs(activeSession, tick),
                                     ),
                                   ),
-                                ),
+                                if (_widgetMode)
+                                  Positioned(
+                                    right: 10,
+                                    bottom: 10,
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.resizeUpLeftDownRight,
+                                      child: GestureDetector(
+                                        onPanStart: (_) {
+                                          if (_isDesktopPlatform()) {
+                                            windowManager.startResizing(ResizeEdge.bottomRight);
+                                          }
+                                        },
+                                        child: const Icon(Icons.open_in_full, size: 16, color: Colors.white),
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
-
-                          // Expand button (top-right) - now clickable
-                          Positioned(
-                            top: 10,
-                            right: 10,
-                            child: FilledButton.tonalIcon(
-                              onPressed: () => _setWidgetMode(false),
-                              icon: const Icon(Icons.open_in_full, size: 16),
-                              label: const Text('Expand'),
-                            ),
-                          ),
-
-                          // Resize handle (bottom-right) - optional but recommended
-                          Positioned(
-                            right: 10,
-                            bottom: 10,
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.resizeDownRight,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onPanStart: (_) => _startWindowResize(ResizeEdge.bottomRight),
-                                child: Container(
-                                  width: 18,
-                                  height: 18,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.22),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Icon(Icons.drag_handle, size: 14, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }
+                    );
+                  }
 
                   return Column(
                     children: [
@@ -1447,26 +1554,7 @@ Future<void> _applyWidgetModeWindowState(bool enabled) async {
                                     errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
                                   ),
                                 ),
-                                Positioned(
-                                    right: 10,
-                                    bottom: 10,
-                                    child: MouseRegion(
-                                      cursor: SystemMouseCursors.resizeDownRight,
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onPanStart: (_) => _startWindowResize(ResizeEdge.bottomRight),
-                                        child: Container(
-                                          width: 18,
-                                          height: 18,
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.22),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Icon(Icons.drag_handle, size: 14, color: Colors.white),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                                   child: Column(

@@ -412,14 +412,27 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         ),
                         TextButton(
                           onPressed: () async {
+                            final goalMin = int.tryParse(goalController.text.trim());
+                            if (goalMin == null || goalMin <= 0) {
+                              await _showScheduleMessageDialog(
+                                title: 'Schedule setup required',
+                                message: 'Enter goal minutes first, then choose a time.',
+                              );
+                              setDialogState(() {
+                                goalError = 'Goal minutes required';
+                              });
+                              return;
+                            }
+
                             final picked = await _pickValidStartTime(
                               tasks: tasks,
                               isRitualTask: false,
+                              goalMinutes: goalMin,
                               initialMinutes: plannedStart == null ? null : plannedStart!.hour * 60 + plannedStart!.minute,
                             );
                             if (picked != null) {
                               setDialogState(() {
-                                plannedStart = TimeOfDay(hour: picked ~/ 60, minute: picked % 60);
+                                plannedStart = TimeOfDay(hour: (picked % 1440) ~/ 60, minute: (picked % 1440) % 60);
                                 startError = null;
                               });
                             }
@@ -442,7 +455,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
               actions: [
                 TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final parsed = int.tryParse(goalController.text.trim());
                     final missingTitle = titleController.text.trim().isEmpty;
                     final missingGoal = parsed == null || parsed <= 0;
@@ -455,6 +468,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       });
                       return;
                     }
+
+                    final resolvedStart = await _pickValidStartTime(
+                      tasks: tasks,
+                      isRitualTask: false,
+                      goalMinutes: parsed,
+                      initialMinutes: plannedStart!.hour * 60 + plannedStart!.minute,
+                    );
+                    if (resolvedStart == null) return;
+
+                    setDialogState(() {
+                      plannedStart = TimeOfDay(hour: (resolvedStart % 1440) ~/ 60, minute: (resolvedStart % 1440) % 60);
+                    });
                     Navigator.of(context).pop(true);
                   },
                   child: const Text('Save'),
@@ -586,35 +611,120 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     return null;
   }
 
+  Future<void> _showScheduleMessageDialog({
+    required String title,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 14),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              Text(message, textAlign: TextAlign.center),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  int _resolveStartMinutesForAnchor({
+    required int pickedMinuteOfDay,
+    required int anchorMinute,
+  }) {
+    final anchorDayOffset = (anchorMinute ~/ 1440) * 1440;
+    var candidate = anchorDayOffset + pickedMinuteOfDay;
+    if (candidate < anchorMinute) {
+      candidate += 1440;
+    }
+    return candidate;
+  }
+
+  Task? _findScheduleConflict({
+    required List<Task> tasks,
+    required int newStart,
+    required int newEnd,
+    int? excludedTaskId,
+  }) {
+    for (final other in tasks) {
+      if (excludedTaskId != null && other.id == excludedTaskId) continue;
+      final otherStart = other.plannedStartMin;
+      final otherEnd = other.plannedEndMin;
+      if (otherStart == null || otherEnd == null) continue;
+      final overlaps = newStart < otherEnd && newEnd > otherStart;
+      if (overlaps) return other;
+    }
+    return null;
+  }
+
   Future<int?> _pickValidStartTime({
     required List<Task> tasks,
     required bool isRitualTask,
+    required int? goalMinutes,
     int? initialMinutes,
+    int? excludedTaskId,
   }) async {
     var nextInitial = initialMinutes ?? 540;
     while (true) {
       final picked = await showTimePicker(
         context: context,
-        initialTime: TimeOfDay(hour: nextInitial ~/ 60, minute: nextInitial % 60),
+        initialTime: TimeOfDay(hour: (nextInitial % 1440) ~/ 60, minute: (nextInitial % 1440) % 60),
       );
       if (picked == null) return null;
 
       final pickedStart = picked.hour * 60 + picked.minute;
       final threshold = isRitualTask ? null : _nonRitualStartThreshold(tasks);
-      if (threshold != null && pickedStart < threshold) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'You can’t schedule tasks before your 4 mandatory locked tasks. Choose a time after your ritual.',
-              ),
-            ),
-          );
-        }
-        nextInitial = threshold;
+      if (!isRitualTask && threshold == null) {
+        await _showScheduleMessageDialog(
+          title: 'Locked ritual first',
+          message: 'You can’t schedule tasks before your 4 mandatory locked tasks. Choose a time after your ritual.',
+        );
         continue;
       }
-      return pickedStart;
+
+      final resolvedStart = threshold == null
+          ? pickedStart
+          : _resolveStartMinutesForAnchor(pickedMinuteOfDay: pickedStart, anchorMinute: threshold);
+
+      if (goalMinutes == null || goalMinutes <= 0) {
+        return resolvedStart;
+      }
+
+      final resolvedEnd = resolvedStart + goalMinutes;
+      final conflict = _findScheduleConflict(
+        tasks: tasks,
+        newStart: resolvedStart,
+        newEnd: resolvedEnd,
+        excludedTaskId: excludedTaskId,
+      );
+
+      if (conflict != null) {
+        final conflictStart = conflict.plannedStartMin!;
+        final conflictEnd = conflict.plannedEndMin!;
+        await _showScheduleMessageDialog(
+          title: 'Schedule conflict',
+          message:
+              "This task overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). Choose a different time.",
+        );
+        nextInitial = conflictEnd;
+        continue;
+      }
+
+      return resolvedStart;
     }
   }
 
@@ -705,7 +815,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final newStart = await _pickValidStartTime(
       tasks: tasks,
       isRitualTask: _isMandatoryTask(selected),
+      goalMinutes: selected.targetMin,
       initialMinutes: oldStart,
+      excludedTaskId: selected.id,
     );
     if (newStart == null || oldStart == newStart) return;
 

@@ -21,6 +21,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _settingsType = 'user_settings';
   static const String _aotTitle = 'always_on_top';
   static const String _themeTitle = 'header_theme';
+  static const String _widgetModeTitle = 'widget_mode';
   static const String _mantraLine1Key = 'mantra_line_1';
   static const String _mantraLine2Key = 'mantra_line_2';
   static const String _mantraLine3Key = 'mantra_line_3';
@@ -61,6 +62,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   late final Timer _timer;
 
   bool _alwaysOnTop = false;
+  bool _widgetMode = false;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
   String _selectedThemeId = _defaultThemeId;
@@ -88,6 +90,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _initialize() async {
     await _ensureTodayRitualTasks();
     await _loadAlwaysOnTop();
+    await _loadWidgetMode();
     await _loadMantra();
     await _loadTheme();
   }
@@ -170,6 +173,26 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final setting = await _getSetting(_aotTitle);
     _alwaysOnTop = setting?.goalChimed ?? false;
     await _applyAlwaysOnTop(_alwaysOnTop);
+  }
+
+  Future<void> _loadWidgetMode() async {
+    final setting = await _getSetting(_widgetModeTitle);
+    _widgetMode = setting?.goalChimed ?? false;
+  }
+
+  Future<void> _setWidgetMode(bool value) async {
+    final existing = await _getSetting(_widgetModeTitle);
+    final row = _newOrExistingSetting(existing, _widgetModeTitle)..goalChimed = value;
+
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.put(row);
+    });
+
+    if (!mounted) return;
+    setState(() {
+      _widgetMode = value;
+    });
   }
 
   Future<void> _setAlwaysOnTop(bool value) async {
@@ -1140,6 +1163,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 children: [
                   const Text('Always on top'),
                   Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
+                  const SizedBox(width: 8),
+                  const Text('Widget mode'),
+                  Switch(value: _widgetMode, onChanged: _setWidgetMode),
                 ],
               ),
             ],
@@ -1263,129 +1289,145 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                           ),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: Row(
-                          children: [
-                            FilledButton.tonal(onPressed: () => _openAddTaskDialog(tasks), child: const Text('Add Task')),
-                            const SizedBox(width: 8),
-                            OutlinedButton(
-                              onPressed: _deletableTasks(tasks).isEmpty
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        _deleteMode = !_deleteMode;
-                                      });
-                                    },
-                              child: Text(_deleteMode ? 'Done Deleting' : 'Delete Task'),
+                      if (_widgetMode)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _setWidgetMode(false),
+                              icon: const Icon(Icons.open_in_full),
+                              label: const Text('Expand full mode'),
                             ),
-                            const SizedBox(width: 8),
-                            OutlinedButton(
-                              onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
-                              child: const Text('Reset Today'),
-                            ),
-                          ],
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          child: Row(
+                            children: [
+                              FilledButton.tonal(onPressed: () => _openAddTaskDialog(tasks), child: const Text('Add Task')),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                onPressed: _deletableTasks(tasks).isEmpty
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _deleteMode = !_deleteMode;
+                                        });
+                                      },
+                                child: Text(_deleteMode ? 'Done Deleting' : 'Delete Task'),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton(
+                                onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
+                                child: const Text('Reset Today'),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                _buildHeaderRow(),
-                                const Divider(height: 1),
-                                Expanded(
-                                  child: ListView.separated(
-                                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                                    itemCount: tasks.length,
-                                    separatorBuilder: (_, __) => const SizedBox(height: 2),
-                                    itemBuilder: (context, index) {
-                                      final task = tasks[index];
-                                      final elapsed = _elapsedMs(task, tick);
-                                      return Padding(
-                                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                                        child: Row(
-                                          crossAxisAlignment: CrossAxisAlignment.center,
-                                          children: [
-                                            SizedBox(
-                                              width: 24,
-                                              child: _isMandatoryTask(task) ? const Icon(Icons.lock, size: 15) : null,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: InkWell(
-                                                onTap: () => _editTaskName(task),
-                                                borderRadius: BorderRadius.circular(6),
-                                                child: Padding(
-                                                  padding: const EdgeInsets.symmetric(vertical: 2),
-                                                  child: Text(
-                                                    '${_taskEmoji(task)} ${task.title}',
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.w700,
-                                                      fontSize: 14,
-                                                      decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                      if (!_widgetMode)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                children: [
+                                  _buildHeaderRow(),
+                                  const Divider(height: 1),
+                                  Expanded(
+                                    child: ListView.separated(
+                                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                                      itemCount: tasks.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 2),
+                                      itemBuilder: (context, index) {
+                                        final task = tasks[index];
+                                        final elapsed = _elapsedMs(task, tick);
+                                        return Padding(
+                                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.center,
+                                            children: [
+                                              SizedBox(
+                                                width: 24,
+                                                child: _isMandatoryTask(task) ? const Icon(Icons.lock, size: 15) : null,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: InkWell(
+                                                  onTap: () => _editTaskName(task),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: Padding(
+                                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                                    child: Text(
+                                                      '${_taskEmoji(task)} ${task.title}',
+                                                      style: TextStyle(
+                                                        fontWeight: FontWeight.w700,
+                                                        fontSize: 14,
+                                                        decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                            SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
-                                            SizedBox(
-                                              width: _controlColumnWidth,
-                                              child: _buildControls(task, elapsed, tasks),
-                                            ),
-                                            SizedBox(
-                                              width: _deleteMode && !_isMandatoryTask(task) ? 72 : 40,
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.end,
-                                                children: [
-                                                  if (_deleteMode && !_isMandatoryTask(task))
-                                                    IconButton(
-                                                      visualDensity: VisualDensity.compact,
-                                                      tooltip: 'Delete task',
-                                                      onPressed: () => _deleteTask(task, tasks),
-                                                      icon: const Icon(Icons.delete_outline, size: 18),
-                                                    ),
-                                                  PopupMenuButton<String>(
-                                                    tooltip: 'Task actions',
-                                                    onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
-                                                    itemBuilder: (context) => [
-                                                      const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
-                                                      const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
-                                                      const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
-                                                      if (!_isMandatoryTask(task))
-                                                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                                                    ],
-                                                  ),
-                                                ],
+                                              SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
+                                              SizedBox(
+                                                width: _controlColumnWidth,
+                                                child: _buildControls(task, elapsed, tasks),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
+                                              SizedBox(
+                                                width: _deleteMode && !_isMandatoryTask(task) ? 72 : 40,
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                  children: [
+                                                    if (_deleteMode && !_isMandatoryTask(task))
+                                                      IconButton(
+                                                        visualDensity: VisualDensity.compact,
+                                                        tooltip: 'Delete task',
+                                                        onPressed: () => _deleteTask(task, tasks),
+                                                        icon: const Icon(Icons.delete_outline, size: 18),
+                                                      ),
+                                                    PopupMenuButton<String>(
+                                                      tooltip: 'Task actions',
+                                                      onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
+                                                      itemBuilder: (context) => [
+                                                        const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
+                                                        const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
+                                                        const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
+                                                        if (!_isMandatoryTask(task))
+                                                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        )
+                      else
+                        const SizedBox(height: 8),
                     ],
                   );
                 },

@@ -37,12 +37,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   static const String _defaultLine3 = 'FINISH FIRST. IMPROVE SECOND.';
   static const String _defaultLine4 = 'CONSISTENCY BUILDS THE PROVIDER.';
   static const String _walkTitle = 'Walk';
-  static const String _transitionTitle = 'Transition (Light meal / half-caff + cold water)';
+  static const String _transitionTitle =
+      'Transition (Light meal / half-caff + cold water)';
   static const String _deskMantraTitle = 'Desk + Mantra';
   static const String _brainDumpTitle = 'Brain Dump';
   static const String _defaultThemeId = 'clouds';
 
-  static const List<String> _themeOptions = ['clouds', 'books', 'aggressive', 'minimal'];
+  static const List<String> _themeOptions = [
+    'clouds',
+    'books',
+    'aggressive',
+    'minimal',
+  ];
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;
@@ -200,7 +206,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Future<void> _setWidgetMode(bool value) async {
     final existing = await _getSetting(_widgetModeTitle);
-    final row = _newOrExistingSetting(existing, _widgetModeTitle)..goalChimed = value;
+    final row = _newOrExistingSetting(existing, _widgetModeTitle)
+      ..goalChimed = value;
 
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
@@ -232,7 +239,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _loadTheme() async {
     final value = await _getSettingText(_themeTitle);
     setState(() {
-      _selectedThemeId = _themeOptions.contains(value) ? value! : _defaultThemeId;
+      _selectedThemeId = _themeOptions.contains(value)
+          ? value!
+          : _defaultThemeId;
     });
   }
 
@@ -264,7 +273,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).dividerColor,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).dividerColor,
                         width: isSelected ? 2 : 1,
                       ),
                       borderRadius: BorderRadius.circular(10),
@@ -310,10 +321,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final line4 = await _getSettingText(_mantraLine4Key);
 
     setState(() {
-      _mantraLine1 = (line1 == null || line1.trim().isEmpty) ? _defaultLine1 : line1;
-      _mantraLine2 = (line2 == null || line2.trim().isEmpty) ? _defaultLine2 : line2;
-      _mantraLine3 = (line3 == null || line3.trim().isEmpty) ? _defaultLine3 : line3;
-      _mantraLine4 = (line4 == null || line4.trim().isEmpty) ? _defaultLine4 : line4;
+      _mantraLine1 = (line1 == null || line1.trim().isEmpty)
+          ? _defaultLine1
+          : line1;
+      _mantraLine2 = (line2 == null || line2.trim().isEmpty)
+          ? _defaultLine2
+          : line2;
+      _mantraLine3 = (line3 == null || line3.trim().isEmpty)
+          ? _defaultLine3
+          : line3;
+      _mantraLine4 = (line4 == null || line4.trim().isEmpty)
+          ? _defaultLine4
+          : line4;
     });
   }
 
@@ -343,18 +362,32 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save'),
+            ),
           ],
         );
       },
     );
 
     if (didSave == true) {
-      final nextLine1 = line1Controller.text.trim().isEmpty ? _defaultLine1 : line1Controller.text.trim();
-      final nextLine2 = line2Controller.text.trim().isEmpty ? _defaultLine2 : line2Controller.text.trim();
-      final nextLine3 = line3Controller.text.trim().isEmpty ? _defaultLine3 : line3Controller.text.trim();
-      final nextLine4 = line4Controller.text.trim().isEmpty ? _defaultLine4 : line4Controller.text.trim();
+      final nextLine1 = line1Controller.text.trim().isEmpty
+          ? _defaultLine1
+          : line1Controller.text.trim();
+      final nextLine2 = line2Controller.text.trim().isEmpty
+          ? _defaultLine2
+          : line2Controller.text.trim();
+      final nextLine3 = line3Controller.text.trim().isEmpty
+          ? _defaultLine3
+          : line3Controller.text.trim();
+      final nextLine4 = line4Controller.text.trim().isEmpty
+          ? _defaultLine4
+          : line4Controller.text.trim();
 
       await _saveSettingText(_mantraLine1Key, nextLine1);
       await _saveSettingText(_mantraLine2Key, nextLine2);
@@ -377,13 +410,20 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     line4Controller.dispose();
   }
 
-  Widget _buildMantraField(String label, TextEditingController controller, int maxChars) {
+  Widget _buildMantraField(
+    String label,
+    TextEditingController controller,
+    int maxChars,
+  ) {
     return TextField(
       controller: controller,
       maxLength: maxChars,
       maxLengthEnforcement: MaxLengthEnforcement.enforced,
       inputFormatters: [LengthLimitingTextInputFormatter(maxChars)],
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
     );
   }
 
@@ -399,15 +439,26 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Size _displayLogicalSize() {
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
     final display = view.display;
-    return Size(display.size.width / display.devicePixelRatio, display.size.height / display.devicePixelRatio);
+    return Size(
+      display.size.width / display.devicePixelRatio,
+      display.size.height / display.devicePixelRatio,
+    );
   }
 
   BoxConstraints _normalWindowBounds() {
     final screen = _displayLogicalSize();
     final maxWidth = (_normalMaxWidth)
-        .clamp(_normalMinWidth, (screen.width - _windowScreenMargin).clamp(_normalMinWidth, _normalMaxWidth))
+        .clamp(
+          _normalMinWidth,
+          (screen.width - _windowScreenMargin).clamp(
+            _normalMinWidth,
+            _normalMaxWidth,
+          ),
+        )
         .toDouble();
-    final maxHeight = (screen.height - _windowScreenMargin).clamp(_normalMinHeight, screen.height).toDouble();
+    final maxHeight = (screen.height - _windowScreenMargin)
+        .clamp(_normalMinHeight, screen.height)
+        .toDouble();
     return BoxConstraints(
       minWidth: _normalMinWidth,
       minHeight: _normalMinHeight,
@@ -419,10 +470,22 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   BoxConstraints _widgetWindowBounds() {
     final screen = _displayLogicalSize();
     final maxWidth = (_widgetMaxWidth)
-        .clamp(_widgetModeMinWidth, (screen.width - _windowScreenMargin).clamp(_widgetModeMinWidth, _widgetMaxWidth))
+        .clamp(
+          _widgetModeMinWidth,
+          (screen.width - _windowScreenMargin).clamp(
+            _widgetModeMinWidth,
+            _widgetMaxWidth,
+          ),
+        )
         .toDouble();
     final maxHeight = (_widgetMaxHeight)
-        .clamp(_widgetModeMinHeight, (screen.height - _windowScreenMargin).clamp(_widgetModeMinHeight, _widgetMaxHeight))
+        .clamp(
+          _widgetModeMinHeight,
+          (screen.height - _windowScreenMargin).clamp(
+            _widgetModeMinHeight,
+            _widgetMaxHeight,
+          ),
+        )
         .toDouble();
     return BoxConstraints(
       minWidth: _widgetModeMinWidth,
@@ -449,7 +512,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     final current = await windowManager.getSize();
     final targetHeight = _recommendedNormalHeight(taskCount);
-    final targetWidth = current.width.clamp(bounds.minWidth, bounds.maxWidth).toDouble();
+    final targetWidth = current.width
+        .clamp(bounds.minWidth, bounds.maxWidth)
+        .toDouble();
     final next = Size(targetWidth, targetHeight);
     await windowManager.setSize(next);
   }
@@ -461,18 +526,31 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       final widgetBounds = _widgetWindowBounds();
       _fullModeWindowSize ??= await windowManager.getSize();
       _widgetModeSize ??= Size(
-        _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
-        _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
+        _widgetDefaultWidth
+            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
+            .toDouble(),
+        _widgetDefaultHeight
+            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
+            .toDouble(),
       );
-      await windowManager.setMinimumSize(Size(widgetBounds.minWidth, widgetBounds.minHeight));
-      await windowManager.setMaximumSize(Size(widgetBounds.maxWidth, widgetBounds.maxHeight));
+      await windowManager.setMinimumSize(
+        Size(widgetBounds.minWidth, widgetBounds.minHeight),
+      );
+      await windowManager.setMaximumSize(
+        Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
+      );
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      await windowManager.setAsFrameless();
       await windowManager.setResizable(true);
       await windowManager.setBackgroundColor(Colors.transparent);
       final currentWidgetSize = _widgetModeSize!;
       final clamped = Size(
-        currentWidgetSize.width.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
-        currentWidgetSize.height.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
+        currentWidgetSize.width
+            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
+            .toDouble(),
+        currentWidgetSize.height
+            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
+            .toDouble(),
       );
       _widgetModeSize = clamped;
       await windowManager.setSize(clamped);
@@ -481,8 +559,13 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     }
 
     final normalBounds = _normalWindowBounds();
-    await windowManager.setMinimumSize(Size(normalBounds.minWidth, normalBounds.minHeight));
-    await windowManager.setMaximumSize(Size(normalBounds.maxWidth, normalBounds.maxHeight));
+    await windowManager.setMinimumSize(
+      Size(normalBounds.minWidth, normalBounds.minHeight),
+    );
+    await windowManager.setMaximumSize(
+      Size(normalBounds.maxWidth, normalBounds.maxHeight),
+    );
+    // (delete the line entirely — no replacement needed)
     await windowManager.setTitleBarStyle(TitleBarStyle.normal);
     await windowManager.setResizable(true);
     await windowManager.setBackgroundColor(Colors.white);
@@ -490,8 +573,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (restoreSize != null) {
       await windowManager.setSize(
         Size(
-          restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
-          restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
+          restoreSize.width
+              .clamp(normalBounds.minWidth, normalBounds.maxWidth)
+              .toDouble(),
+          restoreSize.height
+              .clamp(normalBounds.minHeight, normalBounds.maxHeight)
+              .toDouble(),
         ),
       );
     }
@@ -502,8 +589,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final bounds = _widgetWindowBounds();
     final current = _widgetModeSize ?? await windowManager.getSize();
     final next = Size(
-      (current.width + details.delta.dx).clamp(bounds.minWidth, bounds.maxWidth).toDouble(),
-      (current.height + details.delta.dy).clamp(bounds.minHeight, bounds.maxHeight).toDouble(),
+      (current.width + details.delta.dx)
+          .clamp(bounds.minWidth, bounds.maxWidth)
+          .toDouble(),
+      (current.height + details.delta.dy)
+          .clamp(bounds.minHeight, bounds.maxHeight)
+          .toDouble(),
     );
     _widgetModeSize = next;
     await windowManager.setSize(next);
@@ -517,7 +608,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     }
 
     final isar = await IsarDb.instance();
-    final tasks = await isar.tasks.filter().planIdEqualTo(_planId).sortByOrderIndex().findAll();
+    final tasks = await isar.tasks
+        .filter()
+        .planIdEqualTo(_planId)
+        .sortByOrderIndex()
+        .findAll();
     await _applyNormalWindowSizingForTasks(tasks.length);
     return tasks;
   }
@@ -545,7 +640,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       controller: titleController,
                       maxLength: _taskTitleMaxChars,
                       maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                      inputFormatters: [LengthLimitingTextInputFormatter(_taskTitleMaxChars)],
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(_taskTitleMaxChars),
+                      ],
                       decoration: InputDecoration(
                         labelText: 'Task name *',
                         border: const OutlineInputBorder(),
@@ -568,16 +665,21 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            plannedStart == null ? 'Planned start: —' : 'Planned start: ${plannedStart!.format(context)}',
+                            plannedStart == null
+                                ? 'Planned start: —'
+                                : 'Planned start: ${plannedStart!.format(context)}',
                           ),
                         ),
                         TextButton(
                           onPressed: () async {
-                            final goalMin = int.tryParse(goalController.text.trim());
+                            final goalMin = int.tryParse(
+                              goalController.text.trim(),
+                            );
                             if (goalMin == null || goalMin <= 0) {
                               await _showScheduleMessageDialog(
                                 title: 'Schedule setup required',
-                                message: 'Enter goal minutes first, then choose a time.',
+                                message:
+                                    'Enter goal minutes first, then choose a time.',
                               );
                               setDialogState(() {
                                 goalError = 'Goal minutes required';
@@ -589,11 +691,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                               tasks: tasks,
                               isRitualTask: false,
                               goalMinutes: goalMin,
-                              initialMinutes: plannedStart == null ? null : plannedStart!.hour * 60 + plannedStart!.minute,
+                              initialMinutes: plannedStart == null
+                                  ? null
+                                  : plannedStart!.hour * 60 +
+                                        plannedStart!.minute,
                             );
                             if (picked != null) {
                               setDialogState(() {
-                                plannedStart = TimeOfDay(hour: (picked % 1440) ~/ 60, minute: (picked % 1440) % 60);
+                                plannedStart = TimeOfDay(
+                                  hour: (picked % 1440) ~/ 60,
+                                  minute: (picked % 1440) % 60,
+                                );
                                 startError = null;
                               });
                             }
@@ -607,14 +715,20 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         alignment: Alignment.centerLeft,
                         child: Text(
                           startError!,
-                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
                 FilledButton(
                   onPressed: () async {
                     final parsed = int.tryParse(goalController.text.trim());
@@ -624,8 +738,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     if (missingTitle || missingGoal || missingStart) {
                       setDialogState(() {
                         titleError = missingTitle ? 'Title is required' : null;
-                        goalError = missingGoal ? 'Goal minutes required' : null;
-                        startError = missingStart ? 'Planned start required' : null;
+                        goalError = missingGoal
+                            ? 'Goal minutes required'
+                            : null;
+                        startError = missingStart
+                            ? 'Planned start required'
+                            : null;
                       });
                       return;
                     }
@@ -634,12 +752,16 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                       tasks: tasks,
                       isRitualTask: false,
                       goalMinutes: parsed,
-                      initialMinutes: plannedStart!.hour * 60 + plannedStart!.minute,
+                      initialMinutes:
+                          plannedStart!.hour * 60 + plannedStart!.minute,
                     );
                     if (resolvedStart == null) return;
 
                     setDialogState(() {
-                      plannedStart = TimeOfDay(hour: (resolvedStart % 1440) ~/ 60, minute: (resolvedStart % 1440) % 60);
+                      plannedStart = TimeOfDay(
+                        hour: (resolvedStart % 1440) ~/ 60,
+                        minute: (resolvedStart % 1440) % 60,
+                      );
                     });
                     Navigator.of(context).pop(true);
                   },
@@ -660,7 +782,8 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
       var nextOrderIndex = 0;
       for (final task in tasks) {
-        if (task.orderIndex >= nextOrderIndex) nextOrderIndex = task.orderIndex + 1;
+        if (task.orderIndex >= nextOrderIndex)
+          nextOrderIndex = task.orderIndex + 1;
       }
 
       final newTask = Task()
@@ -706,11 +829,19 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Future<void> _startTask(Task task) async {
     final tasks = await _loadPlanTasks();
-    final hasOtherActiveSession = tasks.any((item) => item.id != task.id && (item.status == 'running' || item.status == 'paused'));
+    final hasOtherActiveSession = tasks.any(
+      (item) =>
+          item.id != task.id &&
+          (item.status == 'running' || item.status == 'paused'),
+    );
     if (hasOtherActiveSession) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Finish or reset the current active session before starting another task.')),
+          const SnackBar(
+            content: Text(
+              'Finish or reset the current active session before starting another task.',
+            ),
+          ),
         );
       }
       return;
@@ -726,7 +857,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _pauseTask(Task task) async {
     final since = _runningSince[task.id];
     if (since != null) {
-      task.actualAccumulatedMs += DateTime.now().difference(since).inMilliseconds;
+      task.actualAccumulatedMs += DateTime.now()
+          .difference(since)
+          .inMilliseconds;
     }
     _runningSince.remove(task.id);
     task.status = 'paused';
@@ -737,7 +870,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   Future<void> _doneTask(Task task) async {
     final since = _runningSince[task.id];
     if (since != null && task.status == 'running') {
-      task.actualAccumulatedMs += DateTime.now().difference(since).inMilliseconds;
+      task.actualAccumulatedMs += DateTime.now()
+          .difference(since)
+          .inMilliseconds;
     }
     _runningSince.remove(task.id);
     task.actualEndTs = DateTime.now().millisecondsSinceEpoch;
@@ -781,12 +916,19 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
           contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 14),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 10),
               Text(message, textAlign: TextAlign.center),
             ],
@@ -843,7 +985,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     while (true) {
       final picked = await showTimePicker(
         context: context,
-        initialTime: TimeOfDay(hour: (nextInitial % 1440) ~/ 60, minute: (nextInitial % 1440) % 60),
+        initialTime: TimeOfDay(
+          hour: (nextInitial % 1440) ~/ 60,
+          minute: (nextInitial % 1440) % 60,
+        ),
       );
       if (picked == null) return null;
 
@@ -852,14 +997,18 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       if (!isRitualTask && threshold == null) {
         await _showScheduleMessageDialog(
           title: 'Locked ritual first',
-          message: 'You can’t schedule tasks before your 4 mandatory locked tasks. Choose a time after your ritual.',
+          message:
+              'You can’t schedule tasks before your 4 mandatory locked tasks. Choose a time after your ritual.',
         );
         continue;
       }
 
       final resolvedStart = threshold == null
           ? pickedStart
-          : _resolveStartMinutesForAnchor(pickedMinuteOfDay: pickedStart, anchorMinute: threshold);
+          : _resolveStartMinutesForAnchor(
+              pickedMinuteOfDay: pickedStart,
+              anchorMinute: threshold,
+            );
 
       if (goalMinutes == null || goalMinutes <= 0) {
         return resolvedStart;
@@ -961,7 +1110,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   String _formatClock(BuildContext context, int minutes) {
     final hour = (minutes ~/ 60) % 24;
     final minute = minutes % 60;
-    return MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
+    return MaterialLocalizations.of(
+      context,
+    ).formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
   }
 
   String _plannedWindow(BuildContext context, Task task) {
@@ -983,13 +1134,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     if (newStart == null || oldStart == newStart) return;
 
     selected.plannedStartMin = newStart;
-    selected.plannedEndMin = selected.targetMin == null ? null : newStart + selected.targetMin!;
+    selected.plannedEndMin = selected.targetMin == null
+        ? null
+        : newStart + selected.targetMin!;
     await _sortTasksByStartTime(tasks);
     setState(() {});
   }
 
   Future<void> _editGoal(Task task) async {
-    final controller = TextEditingController(text: task.targetMin?.toString() ?? '');
+    final controller = TextEditingController(
+      text: task.targetMin?.toString() ?? '',
+    );
     int? selectedValue = task.targetMin;
 
     final didSave = await showDialog<bool>(
@@ -1006,7 +1161,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     controller: controller,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(labelText: 'Minutes', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'Minutes',
+                      border: OutlineInputBorder(),
+                    ),
                     onChanged: (v) {
                       setDialogState(() {
                         selectedValue = int.tryParse(v);
@@ -1032,8 +1190,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 ],
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-                FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Save'),
+                ),
               ],
             );
           },
@@ -1073,7 +1237,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 controller: controller,
                 maxLength: _taskTitleMaxChars,
                 maxLengthEnforcement: MaxLengthEnforcement.enforced,
-                inputFormatters: [LengthLimitingTextInputFormatter(_taskTitleMaxChars)],
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(_taskTitleMaxChars),
+                ],
                 decoration: InputDecoration(
                   labelText: 'Task name *',
                   border: const OutlineInputBorder(),
@@ -1081,7 +1247,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
                 FilledButton(
                   onPressed: () {
                     final value = controller.text.trim();
@@ -1119,15 +1288,22 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         title: const Text('Delete task?'),
         content: Text('Delete "${task.title}"? This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          FilledButton.tonal(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
         ],
       ),
     );
 
     if (confirmed != true) return;
 
-    final remaining = tasks.where((t) => t.id != task.id).toList()..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final remaining = tasks.where((t) => t.id != task.id).toList()
+      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     for (var i = 0; i < remaining.length; i++) {
       remaining[i].orderIndex = i;
     }
@@ -1141,11 +1317,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     _runningSince.remove(task.id);
     if (mounted) {
       setState(() {
-        _deleteMode = remaining.any((item) => !_isMandatoryTask(item)) && _deleteMode;
+        _deleteMode =
+            remaining.any((item) => !_isMandatoryTask(item)) && _deleteMode;
       });
     }
   }
-
 
   bool _isMandatoryTask(Task task) {
     return _mandatoryRitualTitles.contains(task.title);
@@ -1168,7 +1344,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     return '✅';
   }
 
-  Future<void> _onTaskMenuSelected(String action, Task task, List<Task> tasks) async {
+  Future<void> _onTaskMenuSelected(
+    String action,
+    Task task,
+    List<Task> tasks,
+  ) async {
     switch (action) {
       case 'edit_name':
         await _editTaskName(task);
@@ -1192,11 +1372,25 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         children: const [
           SizedBox(width: 24),
           SizedBox(width: 8),
-          SizedBox(width: _timeColumnWidth, child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(
+            width: _timeColumnWidth,
+            child: Text('Time', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
           SizedBox(width: 16),
-          Expanded(child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold))),
-          SizedBox(width: _goalColumnWidth, child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold))),
-          SizedBox(width: _controlColumnWidth, child: Text('Control', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(
+            child: Text('Task', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          SizedBox(
+            width: _goalColumnWidth,
+            child: Text('Goal', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          SizedBox(
+            width: _controlColumnWidth,
+            child: Text(
+              'Control',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
           SizedBox(width: 44),
         ],
       ),
@@ -1244,17 +1438,28 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 3)),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
               ],
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.7),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -1272,10 +1477,19 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 ),
                 const SizedBox(width: 8),
                 TextButton(
-                  onPressed: isRunning ? () => _pauseTask(task) : () => _startTask(task),
+                  onPressed: isRunning
+                      ? () => _pauseTask(task)
+                      : () => _startTask(task),
                   child: Text(isRunning ? 'Pause' : 'Resume'),
                 ),
-                FilledButton.tonal(style: FilledButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: () => _doneTask(task), child: const Text('Done')),
+                FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _doneTask(task),
+                  child: const Text('Done'),
+                ),
               ],
             ),
           ),
@@ -1294,7 +1508,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: activeSession == null
-          ? const Text('No active task', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))
+          ? const Text(
+              'No active task',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            )
           : Row(
               children: [
                 Expanded(
@@ -1302,16 +1523,27 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     '${_taskEmoji(activeSession)} ${activeSession.title} • ${_formatDuration(elapsedMs)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 TextButton(
                   style: TextButton.styleFrom(foregroundColor: Colors.white),
-                  onPressed: activeSession.status == 'running' ? () => _pauseTask(activeSession) : () => _startTask(activeSession),
-                  child: Text(activeSession.status == 'running' ? 'Pause' : 'Resume'),
+                  onPressed: activeSession.status == 'running'
+                      ? () => _pauseTask(activeSession)
+                      : () => _startTask(activeSession),
+                  child: Text(
+                    activeSession.status == 'running' ? 'Pause' : 'Resume',
+                  ),
                 ),
                 FilledButton.tonal(
-                  style: FilledButton.styleFrom(backgroundColor: colorScheme.surface.withValues(alpha: 0.85)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.surface.withValues(
+                      alpha: 0.85,
+                    ),
+                  ),
                   onPressed: () => _doneTask(activeSession),
                   child: const Text('Done'),
                 ),
@@ -1326,7 +1558,9 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
       future: _initFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         return Scaffold(
@@ -1334,19 +1568,19 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
           appBar: _widgetMode
               ? null
               : AppBar(
-            title: const Text('Protocol Table'),
-            actions: [
-              Row(
-                children: [
-                  const Text('Always on top'),
-                  Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
-                  const SizedBox(width: 8),
-                  const Text('Widget mode'),
-                  Switch(value: _widgetMode, onChanged: _setWidgetMode),
-                ],
-              ),
-            ],
-          ),
+                  title: const Text('Protocol Table'),
+                  actions: [
+                    Row(
+                      children: [
+                        const Text('Always on top'),
+                        Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
+                        const SizedBox(width: 8),
+                        const Text('Widget mode'),
+                        Switch(value: _widgetMode, onChanged: _setWidgetMode),
+                      ],
+                    ),
+                  ],
+                ),
           body: FutureBuilder<List<Task>>(
             future: _loadPlanTasks(),
             builder: (context, tasksSnapshot) {
@@ -1363,163 +1597,221 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 12,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: Image.asset(
-                                    'assets/themes/$_selectedThemeId.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 12,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Image.asset(
+                                  'assets/themes/$_selectedThemeId.png',
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
                                   ),
                                 ),
-                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
-                                if (_widgetMode)
-                                  Positioned(
-                                    left: 0,
-                                    right: 0,
-                                    top: 0,
-                                    height: 54,
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.translucent,
-                                      onPanStart: (_) {
-                                        if (_isDesktopPlatform()) {
-                                          windowManager.startDragging();
-                                        }
-                                      },
-                                    ),
+                              ),
+                              Positioned.fill(
+                                child: Container(
+                                  color: Colors.black.withValues(alpha: 0.25),
+                                ),
+                              ),
+                              if (_widgetMode)
+                                Positioned.fill(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onPanStart: (_) {
+                                      if (_isDesktopPlatform()) {
+                                        windowManager.startDragging();
+                                      }
+                                    },
+                                    child: const SizedBox.expand(),
                                   ),
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                                  child: Column(
-                                    children: [
-                                      if (!_widgetMode)
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.end,
-                                          children: [
-                                            TextButton(
-                                              onPressed: _openThemePickerDialog,
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                              child: const Text('Theme'),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  12,
+                                  16,
+                                  12,
+                                ),
+                                child: Column(
+                                  children: [
+                                    if (!_widgetMode)
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          TextButton(
+                                            onPressed: _openThemePickerDialog,
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.white,
                                             ),
-                                            TextButton(
-                                              onPressed: _openEditMantraDialog,
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                              child: const Text('Edit'),
+                                            child: const Text('Theme'),
+                                          ),
+                                          TextButton(
+                                            onPressed: _openEditMantraDialog,
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.white,
                                             ),
-                                          ],
-                                        ),
-                                      Text(
-                                        _mantraLine1,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.8,
-                                        ),
+                                            child: const Text('Edit'),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        _mantraLine2,
+                                    Text(
+                                      _mantraLine1,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _mantraLine2,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _mantraLine3,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: 0.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                        horizontal: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.16,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        _mantraLine4,
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
                                           color: Colors.white,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w900,
                                           letterSpacing: 0.6,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _mantraLine3,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: 0.4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_widgetMode)
+                                Positioned(
+                                  left: 12,
+                                  right: 92,
+                                  bottom: 10,
+                                  child: _buildWidgetModeTaskStrip(
+                                    activeSession,
+                                    activeSession == null
+                                        ? 0
+                                        : _elapsedMs(activeSession, tick),
+                                  ),
+                                ),
+                              if (_widgetMode)
+                                Positioned(
+                                  right: 10,
+                                  bottom: 10,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Expand (exit widget mode)
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.30,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                        ),
+                                        child: IconButton(
+                                          tooltip: 'Expand',
+                                          onPressed: () =>
+                                              _setWidgetMode(false),
+                                          icon: const Icon(
+                                            Icons.open_in_full,
+                                            size: 16,
+                                            color: Colors.white,
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 34,
+                                            minHeight: 34,
+                                          ),
                                         ),
                                       ),
-                                      const SizedBox(height: 12),
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.16),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          _mantraLine4,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 0.6,
+                                      const SizedBox(width: 8),
+
+                                      // Resize handle
+                                      MouseRegion(
+                                        cursor: SystemMouseCursors
+                                            .resizeUpLeftDownRight,
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onPanStart: (_) {
+                                            if (_isDesktopPlatform()) {
+                                              windowManager.startResizing(
+                                                ResizeEdge.bottomRight,
+                                              );
+                                            }
+                                          },
+                                          child: Container(
+                                            width: 18,
+                                            height: 18,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.22,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: const Icon(
+                                              Icons.drag_handle,
+                                              size: 14,
+                                              color: Colors.white,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    top: 10,
-                                    right: 10,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.3),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: IconButton(
-                                        tooltip: 'Expand full mode',
-                                        onPressed: () => _setWidgetMode(false),
-                                        icon: const Icon(Icons.open_in_full, size: 16, color: Colors.white),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                    ),
-                                  ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    left: 12,
-                                    right: 56,
-                                    bottom: 10,
-                                    child: _buildWidgetModeTaskStrip(
-                                      activeSession,
-                                      activeSession == null ? 0 : _elapsedMs(activeSession, tick),
-                                    ),
-                                  ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    right: 10,
-                                    bottom: 10,
-                                    child: MouseRegion(
-                                      cursor: SystemMouseCursors.resizeUpLeftDownRight,
-                                      child: GestureDetector(
-                                        onPanStart: (_) {
-                                          if (_isDesktopPlatform()) {
-                                            windowManager.startResizing(ResizeEdge.bottomRight);
-                                          }
-                                        },
-                                        child: const Icon(Icons.open_in_full, size: 16, color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
                       ),
@@ -1528,7 +1820,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
                   return Column(
                     children: [
-                      if (activeSession != null) _buildRunningBanner(activeSession, _elapsedMs(activeSession, tick)),
+                      if (activeSession != null)
+                        _buildRunningBanner(
+                          activeSession,
+                          _elapsedMs(activeSession, tick),
+                        ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                         child: Container(
@@ -1551,25 +1847,43 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   child: Image.asset(
                                     'assets/themes/$_selectedThemeId.png',
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
+                                    ),
                                   ),
                                 ),
-                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
+                                Positioned.fill(
+                                  child: Container(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                  ),
+                                ),
                                 Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    12,
+                                  ),
                                   child: Column(
                                     children: [
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
                                         children: [
                                           TextButton(
                                             onPressed: _openThemePickerDialog,
-                                            style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                            ),
                                             child: const Text('Theme'),
                                           ),
                                           TextButton(
                                             onPressed: _openEditMantraDialog,
-                                            style: TextButton.styleFrom(foregroundColor: Colors.white),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: Colors.white,
+                                            ),
                                             child: const Text('Edit'),
                                           ),
                                         ],
@@ -1609,10 +1923,17 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                       const SizedBox(height: 12),
                                       Container(
                                         width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                          horizontal: 12,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.16),
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.16,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Text(
                                           _mantraLine4,
@@ -1634,29 +1955,36 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                         ),
                       ),
                       Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                          child: Row(
-                            children: [
-                              FilledButton.tonal(onPressed: () => _openAddTaskDialog(tasks), child: const Text('Add Task')),
-                              const SizedBox(width: 8),
-                              OutlinedButton(
-                                onPressed: _deletableTasks(tasks).isEmpty
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _deleteMode = !_deleteMode;
-                                        });
-                                      },
-                                child: Text(_deleteMode ? 'Done Deleting' : 'Delete Task'),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Row(
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () => _openAddTaskDialog(tasks),
+                              child: const Text('Add Task'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              onPressed: _deletableTasks(tasks).isEmpty
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _deleteMode = !_deleteMode;
+                                      });
+                                    },
+                              child: Text(
+                                _deleteMode ? 'Done Deleting' : 'Delete Task',
                               ),
-                              const SizedBox(width: 8),
-                              OutlinedButton(
-                                onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
-                                child: const Text('Reset Today'),
-                              ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              onPressed: tasks.isEmpty
+                                  ? null
+                                  : () => _resetToday(tasks),
+                              child: const Text('Reset Today'),
+                            ),
+                          ],
                         ),
+                      ),
                       if (!_widgetMode)
                         Expanded(
                           child: Padding(
@@ -1665,7 +1993,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                               decoration: BoxDecoration(
                                 color: Theme.of(context).colorScheme.surface,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.45)),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.45),
+                                ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withValues(alpha: 0.08),
@@ -1680,67 +2012,150 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   const Divider(height: 1),
                                   Expanded(
                                     child: ListView.separated(
-                                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        8,
+                                        6,
+                                        8,
+                                        8,
+                                      ),
                                       itemCount: tasks.length,
-                                      separatorBuilder: (_, __) => const SizedBox(height: 2),
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(height: 2),
                                       itemBuilder: (context, index) {
                                         final task = tasks[index];
                                         final elapsed = _elapsedMs(task, tick);
                                         return Padding(
-                                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                                          padding: const EdgeInsets.fromLTRB(
+                                            4,
+                                            4,
+                                            4,
+                                            4,
+                                          ),
                                           child: Row(
-                                            crossAxisAlignment: CrossAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
                                             children: [
                                               SizedBox(
                                                 width: 24,
-                                                child: _isMandatoryTask(task) ? const Icon(Icons.lock, size: 15) : null,
+                                                child: _isMandatoryTask(task)
+                                                    ? const Icon(
+                                                        Icons.lock,
+                                                        size: 15,
+                                                      )
+                                                    : null,
                                               ),
                                               const SizedBox(width: 6),
-                                              SizedBox(width: _timeColumnWidth, child: _buildTimePill(task, tasks)),
+                                              SizedBox(
+                                                width: _timeColumnWidth,
+                                                child: _buildTimePill(
+                                                  task,
+                                                  tasks,
+                                                ),
+                                              ),
                                               const SizedBox(width: 12),
                                               Expanded(
                                                 child: InkWell(
-                                                  onTap: () => _editTaskName(task),
-                                                  borderRadius: BorderRadius.circular(6),
+                                                  onTap: () =>
+                                                      _editTaskName(task),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
                                                   child: Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 2,
+                                                        ),
                                                     child: Text(
                                                       '${_taskEmoji(task)} ${task.title}',
                                                       style: TextStyle(
-                                                        fontWeight: FontWeight.w700,
+                                                        fontWeight:
+                                                            FontWeight.w700,
                                                         fontSize: 14,
-                                                        decoration: task.status == 'done' ? TextDecoration.lineThrough : null,
+                                                        decoration:
+                                                            task.status ==
+                                                                'done'
+                                                            ? TextDecoration
+                                                                  .lineThrough
+                                                            : null,
                                                       ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                              SizedBox(width: _goalColumnWidth, child: _buildGoalPill(task)),
                                               SizedBox(
-                                                width: _controlColumnWidth,
-                                                child: _buildControls(task, elapsed, tasks),
+                                                width: _goalColumnWidth,
+                                                child: _buildGoalPill(task),
                                               ),
                                               SizedBox(
-                                                width: _deleteMode && !_isMandatoryTask(task) ? 72 : 40,
+                                                width: _controlColumnWidth,
+                                                child: _buildControls(
+                                                  task,
+                                                  elapsed,
+                                                  tasks,
+                                                ),
+                                              ),
+                                              SizedBox(
+                                                width:
+                                                    _deleteMode &&
+                                                        !_isMandatoryTask(task)
+                                                    ? 72
+                                                    : 40,
                                                 child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.end,
                                                   children: [
-                                                    if (_deleteMode && !_isMandatoryTask(task))
+                                                    if (_deleteMode &&
+                                                        !_isMandatoryTask(task))
                                                       IconButton(
-                                                        visualDensity: VisualDensity.compact,
+                                                        visualDensity:
+                                                            VisualDensity
+                                                                .compact,
                                                         tooltip: 'Delete task',
-                                                        onPressed: () => _deleteTask(task, tasks),
-                                                        icon: const Icon(Icons.delete_outline, size: 18),
+                                                        onPressed: () =>
+                                                            _deleteTask(
+                                                              task,
+                                                              tasks,
+                                                            ),
+                                                        icon: const Icon(
+                                                          Icons.delete_outline,
+                                                          size: 18,
+                                                        ),
                                                       ),
                                                     PopupMenuButton<String>(
                                                       tooltip: 'Task actions',
-                                                      onSelected: (value) => _onTaskMenuSelected(value, task, tasks),
+                                                      onSelected: (value) =>
+                                                          _onTaskMenuSelected(
+                                                            value,
+                                                            task,
+                                                            tasks,
+                                                          ),
                                                       itemBuilder: (context) => [
-                                                        const PopupMenuItem(value: 'edit_name', child: Text('Edit task name')),
-                                                        const PopupMenuItem(value: 'edit_time', child: Text('Edit time')),
-                                                        const PopupMenuItem(value: 'edit_goal', child: Text('Edit goal')),
-                                                        if (!_isMandatoryTask(task))
-                                                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                                        const PopupMenuItem(
+                                                          value: 'edit_name',
+                                                          child: Text(
+                                                            'Edit task name',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value: 'edit_time',
+                                                          child: Text(
+                                                            'Edit time',
+                                                          ),
+                                                        ),
+                                                        const PopupMenuItem(
+                                                          value: 'edit_goal',
+                                                          child: Text(
+                                                            'Edit goal',
+                                                          ),
+                                                        ),
+                                                        if (!_isMandatoryTask(
+                                                          task,
+                                                        ))
+                                                          const PopupMenuItem(
+                                                            value: 'delete',
+                                                            child: Text(
+                                                              'Delete',
+                                                            ),
+                                                          ),
                                                       ],
                                                     ),
                                                   ],
@@ -1770,8 +2185,12 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
   Widget _buildControls(Task task, int elapsedMs, List<Task> tasks) {
     final activeSession = _activeSessionTask(tasks);
-    final startBlockedByOtherSession = activeSession != null && activeSession.id != task.id;
-    final canStart = task.plannedStartMin != null && task.targetMin != null && !startBlockedByOtherSession;
+    final startBlockedByOtherSession =
+        activeSession != null && activeSession.id != task.id;
+    final canStart =
+        task.plannedStartMin != null &&
+        task.targetMin != null &&
+        !startBlockedByOtherSession;
     switch (task.status) {
       case 'running':
         return Row(
@@ -1779,9 +2198,23 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
           children: [
             Text(_formatDuration(elapsedMs)),
             const SizedBox(width: 6),
-            TextButton(style: TextButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: () => _pauseTask(task), child: const Text('Pause')),
+            TextButton(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => _pauseTask(task),
+              child: const Text('Pause'),
+            ),
             const SizedBox(width: 2),
-            FilledButton.tonal(style: FilledButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: () => _doneTask(task), child: const Text('Done')),
+            FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => _doneTask(task),
+              child: const Text('Done'),
+            ),
           ],
         );
       case 'paused':
@@ -1790,9 +2223,23 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
           children: [
             Text(_formatDuration(elapsedMs)),
             const SizedBox(width: 6),
-            TextButton(style: TextButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: canStart ? () => _startTask(task) : null, child: const Text('Start')),
+            TextButton(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: canStart ? () => _startTask(task) : null,
+              child: const Text('Start'),
+            ),
             const SizedBox(width: 2),
-            FilledButton.tonal(style: FilledButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: () => _doneTask(task), child: const Text('Done')),
+            FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => _doneTask(task),
+              child: const Text('Done'),
+            ),
           ],
         );
       case 'done':
@@ -1806,7 +2253,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         );
       case 'not_started':
       default:
-        return TextButton(style: TextButton.styleFrom(visualDensity: VisualDensity.compact, tapTargetSize: MaterialTapTargetSize.shrinkWrap), onPressed: canStart ? () => _startTask(task) : null, child: const Text('Start'));
+        return TextButton(
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: canStart ? () => _startTask(task) : null,
+          child: const Text('Start'),
+        );
     }
   }
 }

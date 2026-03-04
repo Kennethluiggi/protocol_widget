@@ -224,15 +224,36 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _setWidgetMode(bool value) async {
+    if (value == _widgetMode) return;
+
+    // Persist setting first.
     final existing = await _getSetting(_widgetModeTitle);
-    final row = _newOrExistingSetting(existing, _widgetModeTitle)
-      ..goalChimed = value;
+    final row =
+        _newOrExistingSetting(existing, _widgetModeTitle)..goalChimed = value;
 
     final isar = await IsarDb.instance();
     await isar.writeTxn(() async {
       await isar.tasks.put(row);
     });
 
+    // Exiting widget mode: keep rendering widget UI until window restore is done.
+    if (!value) {
+      if (!mounted) return;
+      setState(() {
+        _isExitingWidgetMode = true;
+      });
+
+      await _applyWidgetModeWindowState(false);
+      if (!mounted) return;
+
+      setState(() {
+        _widgetMode = false;
+        _isExitingWidgetMode = false;
+      });
+      return;
+    }
+
+    // Entering widget mode: flip UI state, then apply widget window state.
     if (!mounted) return;
     if (!value) {
       setState(() {
@@ -248,9 +269,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     }
 
     setState(() {
-      _widgetMode = value;
+      _widgetMode = true;
     });
-    await _applyWidgetModeWindowState(value);
+
+    await _applyWidgetModeWindowState(true);
   }
 
   Future<void> _setAlwaysOnTop(bool value) async {
@@ -1692,7 +1714,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
                   final activeSession = _activeSessionTask(tasks);
-                  if (_widgetMode) {
+                  if (_widgetMode || _isExitingWidgetMode) {
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: Container(

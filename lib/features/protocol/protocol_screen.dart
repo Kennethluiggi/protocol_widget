@@ -115,26 +115,27 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     super.dispose();
   }
 
-  Future<void> _initialize() async {
-    await _ensureTodayRitualTasks();
-    await _loadAlwaysOnTop();
-    await _loadWidgetMode();
+Future<void> _initialize() async {
+  debugPrint('HIT _initialize');
 
-    // Apply window bounds/state as early as possible.
-    await _applyWidgetModeWindowState(_widgetMode);
+  if (!_isDesktopPlatform()) return;
 
-    // If we start in normal mode, apply normal bounds again after first frame.
-    // This fixes the “can’t expand width until toggling widget mode” behavior.
-    if (!_widgetMode && !_appliedInitialNormalBounds && _isDesktopPlatform()) {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        await _applyNormalBoundsOnlyOnce();
-      });
-    }
+  // Force a clean, normal Windows chrome on startup so caption buttons paint correctly.
+  await windowManager.setTitleBarStyle(
+    TitleBarStyle.normal,
+    windowButtonVisibility: true,
+  );
+  await windowManager.setResizable(true);
+  await windowManager.setBackgroundColor(Colors.white);
 
-    await _loadMantra();
-    await _loadTheme();
-  }
+  // Small delay helps Windows/DWM fully apply the chrome before we mutate other window state.
+  await Future.delayed(const Duration(milliseconds: 30));
+
+  await _loadWidgetMode();
+  await _loadAlwaysOnTop();
+
+  await _applyWidgetModeWindowState(_widgetMode);
+}
 
   static DateTime _localNow() => DateTime.now().toLocal();
 
@@ -559,6 +560,7 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   }
 
   Future<void> _applyWidgetModeWindowState(bool enabled) async {
+    debugPrint('HIT _applyWidgetModeWindowState enabled=$enabled');
     if (!_isDesktopPlatform()) return;
 
     if (enabled) {
@@ -583,8 +585,14 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
         Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
       );
 
-      // Style changes (do not reorder).
-      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+      // IMPORTANT:
+      // Do NOT call setAsFrameless() here. That is what causes the Windows caption
+      // buttons to get into a broken/invisible rendering state after style toggles.
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
+      );
+
       await windowManager.setResizable(true);
       await windowManager.setBackgroundColor(Colors.transparent);
 
@@ -613,20 +621,10 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     // Exiting widget mode -> restore normal bounds and style.
     final normalBounds = _normalWindowBounds();
 
-    await windowManager.setMinimumSize(
-      Size(normalBounds.minWidth, normalBounds.minHeight),
-    );
-    await windowManager.setMaximumSize(
-      Size(normalBounds.maxWidth, normalBounds.maxHeight),
-    );
-
-    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
-    await windowManager.setResizable(true);
-    await windowManager.setBackgroundColor(Colors.white);
-
-    final restoreSize = _fullModeWindowSize;
+    // Compute restore size first (clamped to normal bounds).
+    Size? restoreSize = _fullModeWindowSize;
     if (restoreSize != null) {
-      final clamped = Size(
+      restoreSize = Size(
         restoreSize.width
             .clamp(normalBounds.minWidth, normalBounds.maxWidth)
             .toDouble(),
@@ -634,16 +632,36 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
             .clamp(normalBounds.minHeight, normalBounds.maxHeight)
             .toDouble(),
       );
-      await windowManager.setSize(clamped);
     }
 
-    // Ensure normal bounds are applied at least once on startup sessions too.
+    // Restore chrome/style FIRST.
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.normal,
+      windowButtonVisibility: true,
+    );
+    await windowManager.setResizable(true);
+    await windowManager.setBackgroundColor(Colors.white);
+
+    // Set the target normal size BEFORE raising min constraints.
+    if (restoreSize != null) {
+      await windowManager.setSize(restoreSize);
+    }
+
+    // Now apply normal min/max constraints.
+    await windowManager.setMinimumSize(
+      Size(normalBounds.minWidth, normalBounds.minHeight),
+    );
+    await windowManager.setMaximumSize(
+      Size(normalBounds.maxWidth, normalBounds.maxHeight),
+    );
+
     if (!_appliedInitialNormalBounds) {
       _appliedInitialNormalBounds = true;
     }
   }
 
   Future<void> _applyNormalBoundsOnlyOnce() async {
+    debugPrint('HIT _applyNormalBoundsOnlyOnce');
     if (!_isDesktopPlatform()) return;
     if (_widgetMode) return;
     if (_appliedInitialNormalBounds) return;
@@ -653,19 +671,31 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     final normalBounds = _normalWindowBounds();
 
     // Force normal window chrome/state in case it was left hidden.
-    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.normal,
+      windowButtonVisibility: true,
+    );
     await windowManager.setResizable(true);
     await windowManager.setBackgroundColor(Colors.white);
 
-    await windowManager.setMinimumSize(Size(normalBounds.minWidth, normalBounds.minHeight));
-    await windowManager.setMaximumSize(Size(normalBounds.maxWidth, normalBounds.maxHeight));
+    await windowManager.setMinimumSize(
+      Size(normalBounds.minWidth, normalBounds.minHeight),
+    );
+    await windowManager.setMaximumSize(
+      Size(normalBounds.maxWidth, normalBounds.maxHeight),
+    );
 
     // Clamp current size into the bounds to ensure width expansion works immediately.
     final current = await windowManager.getSize();
     final clamped = Size(
-      current.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
-      current.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
+      current.width
+          .clamp(normalBounds.minWidth, normalBounds.maxWidth)
+          .toDouble(),
+      current.height
+          .clamp(normalBounds.minHeight, normalBounds.maxHeight)
+          .toDouble(),
     );
+
     if (clamped != current) {
       await windowManager.setSize(clamped);
     }

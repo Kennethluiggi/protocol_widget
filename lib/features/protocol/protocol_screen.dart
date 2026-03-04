@@ -54,10 +54,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
     _deskMantraTitle,
     _brainDumpTitle,
   };
-  static const double _widgetMinWidth = 520;
-  static const double _widgetMinHeight = 220;
-  static const double _widgetMaxWidth = 1600;
-  static const double _widgetMaxHeight = 1000;
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
@@ -68,7 +64,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
   Size? _fullModeWindowSize;
-  Size? _widgetModeSize;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
   String _selectedThemeId = _defaultThemeId;
@@ -390,32 +385,20 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
 
     if (enabled) {
       _fullModeWindowSize ??= await windowManager.getSize();
-      _widgetModeSize ??= Size(_fullModeWindowSize!.width, 320);
-      await windowManager.setResizable(true);
+      final width = _fullModeWindowSize?.width ?? 980;
       await windowManager.setAsFrameless();
       await windowManager.setBackgroundColor(Colors.transparent);
-      await windowManager.setSize(_widgetModeSize!);
+      await windowManager.setSize(Size(width, 320));
       return;
     }
 
-    await windowManager.setTitleBarStyle(TitleBarStyle.normal);
-    await windowManager.setResizable(true);
+    // Runtime frame restoration is platform-dependent; keep stable fallback behavior
+    // by restoring opaque background and full-mode size when leaving widget mode.
     await windowManager.setBackgroundColor(Colors.white);
     final restoreSize = _fullModeWindowSize;
     if (restoreSize != null) {
       await windowManager.setSize(restoreSize);
     }
-  }
-
-  Future<void> _resizeWidgetMode(DragUpdateDetails details) async {
-    if (!_widgetMode || !_isDesktopPlatform()) return;
-    final current = _widgetModeSize ?? await windowManager.getSize();
-    final next = Size(
-      (current.width + details.delta.dx).clamp(_widgetMinWidth, _widgetMaxWidth),
-      (current.height + details.delta.dy).clamp(_widgetMinHeight, _widgetMaxHeight),
-    );
-    _widgetModeSize = next;
-    await windowManager.setSize(next);
   }
 
   Future<List<Task>> _loadPlanTasks() async {
@@ -1293,13 +1276,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   ),
                                 ),
                                 Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
-                                if (_widgetMode)
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.translucent,
-                                      onPanStart: (_) => windowManager.startDragging(),
-                                    ),
-                                  ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                                   child: Column(
@@ -1396,31 +1372,11 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                       ),
                                     ),
                                   ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    right: 10,
-                                    bottom: 10,
-                                    child: MouseRegion(
-                                      cursor: SystemMouseCursors.resizeUpLeftDownRight,
-                                      child: GestureDetector(
-                                        onPanUpdate: _resizeWidgetMode,
-                                        child: Container(
-                                          width: 16,
-                                          height: 16,
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.35),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Icon(Icons.drag_handle, size: 12, color: Colors.white),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
                         ),
-                      ),
+                        
                     );
                   }
 
@@ -1453,13 +1409,6 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                   ),
                                 ),
                                 Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
-                                if (_widgetMode)
-                                  Positioned.fill(
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.translucent,
-                                      onPanStart: (_) => windowManager.startDragging(),
-                                    ),
-                                  ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                                   child: Column(

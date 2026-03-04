@@ -379,27 +379,49 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   bool _isDesktopPlatform() {
     return Platform.isWindows || Platform.isLinux || Platform.isMacOS;
   }
-
-  Future<void> _applyWidgetModeWindowState(bool enabled) async {
+  Future<void> _startWindowDrag() async {
     if (!_isDesktopPlatform()) return;
-
-    if (enabled) {
-      _fullModeWindowSize ??= await windowManager.getSize();
-      final width = _fullModeWindowSize?.width ?? 980;
-      await windowManager.setAsFrameless();
-      await windowManager.setBackgroundColor(Colors.transparent);
-      await windowManager.setSize(Size(width, 320));
-      return;
-    }
-
-    // Runtime frame restoration is platform-dependent; keep stable fallback behavior
-    // by restoring opaque background and full-mode size when leaving widget mode.
-    await windowManager.setBackgroundColor(Colors.white);
-    final restoreSize = _fullModeWindowSize;
-    if (restoreSize != null) {
-      await windowManager.setSize(restoreSize);
-    }
+    await windowManager.startDragging();
   }
+
+  Future<void> _startWindowResize(ResizeEdge edge) async {
+    if (!_isDesktopPlatform()) return;
+    await windowManager.startResizing(edge);
+  }
+
+Future<void> _applyWidgetModeWindowState(bool enabled) async {
+  if (!_isDesktopPlatform()) return;
+
+  if (enabled) {
+    _fullModeWindowSize ??= await windowManager.getSize();
+    final width = _fullModeWindowSize?.width ?? 980;
+
+    // Hide title bar/buttons instead of frameless, so we can restore reliably.
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+    );
+
+    await windowManager.setResizable(true);
+    await windowManager.setBackgroundColor(Colors.transparent);
+    await windowManager.setSize(Size(width, 320));
+    return;
+  }
+
+  // Restore normal title bar/buttons
+  await windowManager.setTitleBarStyle(
+    TitleBarStyle.normal,
+    windowButtonVisibility: true,
+  );
+
+  await windowManager.setResizable(true);
+  await windowManager.setBackgroundColor(Colors.white);
+
+  final restoreSize = _fullModeWindowSize;
+  if (restoreSize != null) {
+    await windowManager.setSize(restoreSize);
+  }
+}
 
   Future<List<Task>> _loadPlanTasks() async {
     final localTodayPlanId = _todayPlanId();
@@ -1249,136 +1271,153 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
                   final activeSession = _activeSessionTask(tasks);
-                  if (_widgetMode) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.12),
-                                blurRadius: 12,
-                                offset: const Offset(0, 5),
+                if (_widgetMode) {
+                  return SizedBox.expand(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
+                        children: [
+                          // Background image
+                          Positioned.fill(
+                            child: Image.asset(
+                              'assets/themes/$_selectedThemeId.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                               ),
-                            ],
+                            ),
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: Stack(
+
+                          // Dark overlay
+                          Positioned.fill(
+                            child: Container(color: Colors.black.withValues(alpha: 0.25)),
+                          ),
+
+                          // DRAG LAYER (behind controls)
+                          // This allows dragging the widget around without stealing taps from buttons.
+                          Positioned.fill(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onPanStart: (_) => _startWindowDrag(),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+
+                          // CONTENT
+                          Padding(
+                            // Keep this small so you don't create a big invisible border
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                            child: Column(
                               children: [
-                                Positioned.fill(
-                                  child: Image.asset(
-                                    'assets/themes/$_selectedThemeId.png',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                                // top spacing reserved for the Expand button area
+                                const SizedBox(height: 4),
+
+                                Text(
+                                  _mantraLine1,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.8,
                                   ),
                                 ),
-                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                                  child: Column(
-                                    children: [
-                                      if (!_widgetMode)
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.end,
-                                          children: [
-                                            TextButton(
-                                              onPressed: _openThemePickerDialog,
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                              child: const Text('Theme'),
-                                            ),
-                                            TextButton(
-                                              onPressed: _openEditMantraDialog,
-                                              style: TextButton.styleFrom(foregroundColor: Colors.white),
-                                              child: const Text('Edit'),
-                                            ),
-                                          ],
-                                        ),
-                                      Text(
-                                        _mantraLine1,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.8,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        _mantraLine2,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                          letterSpacing: 0.6,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _mantraLine3,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          letterSpacing: 0.4,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.16),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          _mantraLine4,
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 0.6,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                const SizedBox(height: 6),
+                                Text(
+                                  _mantraLine2,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.6,
                                   ),
                                 ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    top: 10,
-                                    right: 10,
-                                    child: FilledButton.tonalIcon(
-                                      onPressed: () => _setWidgetMode(false),
-                                      icon: const Icon(Icons.open_in_full, size: 16),
-                                      label: const Text('Expand'),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _mantraLine3,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.16),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _mantraLine4,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.6,
                                     ),
                                   ),
-                                if (_widgetMode)
-                                  Positioned(
-                                    left: 12,
-                                    bottom: 10,
-                                    child: SizedBox(
-                                      width: 420,
-                                      child: _buildWidgetModeTaskStrip(
-                                        activeSession,
-                                        activeSession == null ? 0 : _elapsedMs(activeSession, tick),
-                                      ),
+                                ),
+
+                                const Spacer(),
+
+                                // Task strip at bottom-left
+                                Align(
+                                  alignment: Alignment.bottomLeft,
+                                  child: SizedBox(
+                                    width: 420,
+                                    child: _buildWidgetModeTaskStrip(
+                                      activeSession,
+                                      activeSession == null ? 0 : _elapsedMs(activeSession, tick),
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
-                        ),
-                        
-                    );
-                  }
+
+                          // Expand button (top-right) - now clickable
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: FilledButton.tonalIcon(
+                              onPressed: () => _setWidgetMode(false),
+                              icon: const Icon(Icons.open_in_full, size: 16),
+                              label: const Text('Expand'),
+                            ),
+                          ),
+
+                          // Resize handle (bottom-right) - optional but recommended
+                          Positioned(
+                            right: 10,
+                            bottom: 10,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.resizeDownRight,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: (_) => _startWindowResize(ResizeEdge.bottomRight),
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.22),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Icon(Icons.drag_handle, size: 14, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
                   return Column(
                     children: [
@@ -1408,7 +1447,26 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
                                     errorBuilder: (_, __, ___) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
                                   ),
                                 ),
-                                Positioned.fill(child: Container(color: Colors.black.withValues(alpha: 0.25))),
+                                Positioned(
+                                    right: 10,
+                                    bottom: 10,
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.resizeDownRight,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onPanStart: (_) => _startWindowResize(ResizeEdge.bottomRight),
+                                        child: Container(
+                                          width: 18,
+                                          height: 18,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.22),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Icon(Icons.drag_handle, size: 14, color: Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                                   child: Column(

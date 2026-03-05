@@ -13,14 +13,15 @@ Future<void> main() async {
     await windowManager.ensureInitialized();
 
     const windowOptions = WindowOptions(
-      titleBarStyle: TitleBarStyle.normal,
-      windowButtonVisibility: true,
+      // Option C: hide native titlebar permanently (custom Flutter titlebar).
+      titleBarStyle: TitleBarStyle.hidden,
+      windowButtonVisibility: false,
     );
 
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.setTitleBarStyle(
-        TitleBarStyle.normal,
-        windowButtonVisibility: true,
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
       );
       await windowManager.setResizable(true);
       await windowManager.show();

@@ -16,7 +16,9 @@ class ProtocolScreen extends StatefulWidget {
   State<ProtocolScreen> createState() => _ProtocolScreenState();
 }
 
-class _ProtocolScreenState extends State<ProtocolScreen> {
+class _ProtocolScreenState extends State<ProtocolScreen>
+  with WidgetsBindingObserver {
+
   static const int _settingsPlanId = -1;
   static const String _settingsType = 'user_settings';
   static const String _aotTitle = 'always_on_top';
@@ -99,21 +101,45 @@ class _ProtocolScreenState extends State<ProtocolScreen> {
   String _mantraLine3 = _defaultLine3;
   String _mantraLine4 = _defaultLine4;
 
-  @override
-  void initState() {
-    super.initState();
-    _initFuture = _initialize();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _ticker.value = DateTime.now();
-    });
-  }
+@override
+void initState() {
+  super.initState();
+  WidgetsBinding.instance.addObserver(this);
 
-  @override
-  void dispose() {
-    _timer.cancel();
-    _ticker.dispose();
-    super.dispose();
+  _initFuture = _initialize();
+  _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _ticker.value = DateTime.now();
+  });
+}
+
+@override
+void dispose() {
+  WidgetsBinding.instance.removeObserver(this);
+  _timer.cancel();
+  _ticker.dispose();
+  super.dispose();
+}
+
+@override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (state == AppLifecycleState.resumed) {
+    _handleResume();
   }
+}
+
+Future<void> _handleResume() async {
+  if (!_isDesktopPlatform()) return;
+
+  debugPrint('[Lifecycle] resumed -> resetting Isar + reloading UI');
+
+  // Force a clean DB reopen after sleep/resume.
+  await IsarDb.reset();
+  await IsarDb.instance();
+
+  // Trigger UI refresh so the FutureBuilder reruns _loadPlanTasks().
+  if (!mounted) return;
+  setState(() {});
+}
 
 Future<void> _initialize() async {
   debugPrint('HIT _initialize');
@@ -139,10 +165,13 @@ Future<void> _initialize() async {
 
   static DateTime _localNow() => DateTime.now().toLocal();
 
-  static int _todayPlanId() {
-    final now = _localNow();
-    return now.year * 10000 + now.month * 100 + now.day;
-  }
+  //static int _todayPlanId() {
+  //  final now = _localNow();
+  //  return now.year * 10000 + now.month * 100 + now.day;
+  //}
+  // Single, persistent plan id for all user tasks.
+  // (Settings already use _settingsPlanId = -1)
+  static int _todayPlanId() => 1;
 
   Future<void> _ensureTodayRitualTasks() async {
     final isar = await IsarDb.instance();
@@ -580,7 +609,10 @@ Future<void> _initialize() async {
       await windowManager.setMaximumSize(
         Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
       );
-
+      // Force Windows to re-apply sizing constraints after mode switches.
+      await windowManager.setResizable(false);
+      await Future.delayed(const Duration(milliseconds: 20));
+      await windowManager.setResizable(true);
       // Widget mode: truly frameless + no OS resize frame (we resize via our handle).
       await windowManager.setHasShadow(false);
       await windowManager.setAsFrameless();
@@ -697,19 +729,30 @@ Future<void> _initialize() async {
     await windowManager.setSize(next);
   }
 
-  Future<List<Task>> _loadPlanTasks() async {
-    final localTodayPlanId = _todayPlanId();
-    if (_planId != localTodayPlanId) {
-      _planId = localTodayPlanId;
-      await _ensureTodayRitualTasks();
-    }
+    Future<List<Task>> _loadPlanTasks() async {
+    //final localTodayPlanId = _todayPlanId();
+    // Always keep planId aligned to today.
+    //if (_planId != localTodayPlanId) {
+    //  _planId = localTodayPlanId;
+    //}
+    // Always ensure the 4 ritual tasks exist for today (cold start safe).
+    //await _ensureTodayRitualTasks();
+    
 
+    // No day rollover. Tasks live under one persistent plan id.
+    await _ensureTodayRitualTasks();
     final isar = await IsarDb.instance();
+
+    // (Optional debug)
+    final total = await isar.tasks.count();
+    debugPrint('ISAR total tasks count = $total, planId=$_planId');
+
     final tasks = await isar.tasks
         .filter()
         .planIdEqualTo(_planId)
         .sortByOrderIndex()
         .findAll();
+
     await _applyNormalWindowSizingForTasks(tasks.length);
     return tasks;
   }

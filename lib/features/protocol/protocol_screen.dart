@@ -120,10 +120,10 @@ Future<void> _initialize() async {
 
   if (!_isDesktopPlatform()) return;
 
-  // Force a clean, normal Windows chrome on startup so caption buttons paint correctly.
+  // Always use custom chrome: hide native title bar buttons permanently.
   await windowManager.setTitleBarStyle(
-    TitleBarStyle.normal,
-    windowButtonVisibility: true,
+    TitleBarStyle.hidden,
+    windowButtonVisibility: false,
   );
   await windowManager.setResizable(true);
   await windowManager.setBackgroundColor(Colors.white);
@@ -569,15 +569,11 @@ Future<void> _initialize() async {
       _fullModeWindowSize ??= await windowManager.getSize();
 
       _widgetModeSize ??= Size(
-        _widgetDefaultWidth
-            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
-            .toDouble(),
-        _widgetDefaultHeight
-            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
-            .toDouble(),
+        _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
       );
 
-      // Apply bounds first.
+      // Apply widget bounds constraints.
       await windowManager.setMinimumSize(
         Size(widgetBounds.minWidth, widgetBounds.minHeight),
       );
@@ -585,25 +581,17 @@ Future<void> _initialize() async {
         Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
       );
 
-      // IMPORTANT:
-      // Do NOT call setAsFrameless() here. That is what causes the Windows caption
-      // buttons to get into a broken/invisible rendering state after style toggles.
-      await windowManager.setTitleBarStyle(
-        TitleBarStyle.hidden,
-        windowButtonVisibility: false,
-      );
+      // Widget mode: truly frameless + no OS resize frame (we resize via our handle).
+      await windowManager.setHasShadow(false);
+      await windowManager.setAsFrameless();
+      await windowManager.setResizable(false);
 
-      await windowManager.setResizable(true);
       await windowManager.setBackgroundColor(Colors.transparent);
 
       // Compute final target size ONCE, clamp ONCE, set ONCE.
       final target = Size(
-        _widgetModeSize!.width
-            .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
-            .toDouble(),
-        _widgetModeSize!.height
-            .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
-            .toDouble(),
+        _widgetModeSize!.width.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
+        _widgetModeSize!.height.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
       );
       _widgetModeSize = target;
 
@@ -618,29 +606,25 @@ Future<void> _initialize() async {
       return;
     }
 
-    // Exiting widget mode -> restore normal bounds and style.
+    // Exiting widget mode -> restore normal bounds (native titlebar stays hidden;
+    // we use a custom title bar in Flutter permanently).
     final normalBounds = _normalWindowBounds();
 
     // Compute restore size first (clamped to normal bounds).
     Size? restoreSize = _fullModeWindowSize;
     if (restoreSize != null) {
       restoreSize = Size(
-        restoreSize.width
-            .clamp(normalBounds.minWidth, normalBounds.maxWidth)
-            .toDouble(),
-        restoreSize.height
-            .clamp(normalBounds.minHeight, normalBounds.maxHeight)
-            .toDouble(),
+        restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
+        restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
       );
     }
 
-    // Restore chrome/style FIRST.
-    await windowManager.setTitleBarStyle(
-      TitleBarStyle.normal,
-      windowButtonVisibility: true,
-    );
+    
+    await windowManager.setHasShadow(true);
     await windowManager.setResizable(true);
-    await windowManager.setBackgroundColor(Colors.white);
+
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    await windowManager.setBackgroundColor(bg);
 
     // Set the target normal size BEFORE raising min constraints.
     if (restoreSize != null) {
@@ -670,13 +654,13 @@ Future<void> _initialize() async {
 
     final normalBounds = _normalWindowBounds();
 
-    // Force normal window chrome/state in case it was left hidden.
-    await windowManager.setTitleBarStyle(
-      TitleBarStyle.normal,
-      windowButtonVisibility: true,
-    );
+    await windowManager.setHasShadow(true);
     await windowManager.setResizable(true);
-    await windowManager.setBackgroundColor(Colors.white);
+
+    // Ensure we are opaque in normal mode (native titlebar remains hidden; custom
+    // title bar is rendered in Flutter).
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    await windowManager.setBackgroundColor(bg);
 
     await windowManager.setMinimumSize(
       Size(normalBounds.minWidth, normalBounds.minHeight),
@@ -685,15 +669,11 @@ Future<void> _initialize() async {
       Size(normalBounds.maxWidth, normalBounds.maxHeight),
     );
 
-    // Clamp current size into the bounds to ensure width expansion works immediately.
+    // Clamp current window size into normal bounds if needed.
     final current = await windowManager.getSize();
     final clamped = Size(
-      current.width
-          .clamp(normalBounds.minWidth, normalBounds.maxWidth)
-          .toDouble(),
-      current.height
-          .clamp(normalBounds.minHeight, normalBounds.maxHeight)
-          .toDouble(),
+      current.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
+      current.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
     );
 
     if (clamped != current) {
@@ -1680,6 +1660,100 @@ Future<void> _initialize() async {
     );
   }
 
+  PreferredSizeWidget _buildCustomTitleBar() {
+    // Only render in normal mode. Widget mode uses its own compact UI.
+    const double barHeight = 44;
+
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(barHeight),
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+        child: SafeArea(
+          bottom: false,
+          child: SizedBox(
+            height: barHeight,
+            child: Row(
+              children: [
+                // Drag region + title.
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (_) async {
+                      if (_isDesktopPlatform()) {
+                        // IMPORTANT: startDragging takes NO arguments.
+                        await windowManager.startDragging();
+                      }
+                    },
+                    onDoubleTap: () async {
+                      if (!_isDesktopPlatform()) return;
+                      final isMax = await windowManager.isMaximized();
+                      if (isMax) {
+                        await windowManager.unmaximize();
+                      } else {
+                        await windowManager.maximize();
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Protocol Table',
+                          style: Theme.of(context).textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Existing controls.
+                Row(
+                  children: [
+                    const Text('Always on top'),
+                    Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
+                    const SizedBox(width: 8),
+                    const Text('Widget mode'),
+                    Switch(value: _widgetMode, onChanged: _setWidgetMode),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+
+                // Custom window buttons.
+                if (_isDesktopPlatform()) ...[
+                  IconButton(
+                    tooltip: 'Minimize',
+                    icon: const Icon(Icons.remove),
+                    onPressed: () async => windowManager.minimize(),
+                  ),
+                  IconButton(
+                    tooltip: 'Maximize',
+                    icon: const Icon(Icons.crop_square),
+                    onPressed: () async {
+                      final isMax = await windowManager.isMaximized();
+                      if (isMax) {
+                        await windowManager.unmaximize();
+                      } else {
+                        await windowManager.maximize();
+                      }
+                    },
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close),
+                    onPressed: () async => windowManager.close(),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
@@ -1693,22 +1767,7 @@ Future<void> _initialize() async {
 
         return Scaffold(
           backgroundColor: _widgetMode ? Colors.transparent : null,
-          appBar: _widgetMode
-              ? null
-              : AppBar(
-                  title: const Text('Protocol Table'),
-                  actions: [
-                    Row(
-                      children: [
-                        const Text('Always on top'),
-                        Switch(value: _alwaysOnTop, onChanged: _setAlwaysOnTop),
-                        const SizedBox(width: 8),
-                        const Text('Widget mode'),
-                        Switch(value: _widgetMode, onChanged: _setWidgetMode),
-                      ],
-                    ),
-                  ],
-                ),
+          appBar: _widgetMode ? null : _buildCustomTitleBar(),
           body: FutureBuilder<List<Task>>(
             future: _loadPlanTasks(),
             builder: (context, tasksSnapshot) {
@@ -1722,228 +1781,187 @@ Future<void> _initialize() async {
                 builder: (context, tick, _) {
                   final activeSession = _activeSessionTask(tasks);
                   if (_widgetMode || _isExitingWidgetMode) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.12),
-                              blurRadius: 12,
-                              offset: const Offset(0, 5),
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: Image.asset(
+                              'assets/themes/$_selectedThemeId.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              ),
                             ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: Image.asset(
-                                  'assets/themes/$_selectedThemeId.png',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.surfaceContainerHighest,
-                                  ),
-                                ),
+                          ),
+                          Positioned.fill(
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          if (_widgetMode)
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onPanStart: (_) {
+                                  if (_isDesktopPlatform()) {
+                                    windowManager.startDragging();
+                                  }
+                                },
+                                child: const SizedBox.expand(),
                               ),
-                              Positioned.fill(
-                                child: Container(
-                                  color: Colors.black.withValues(alpha: 0.25),
-                                ),
-                              ),
-                              if (_widgetMode)
-                                Positioned.fill(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    onPanStart: (_) {
-                                      if (_isDesktopPlatform()) {
-                                        windowManager.startDragging();
-                                      }
-                                    },
-                                    child: const SizedBox.expand(),
-                                  ),
-                                ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  12,
-                                  16,
-                                  12,
-                                ),
-                                child: Column(
-                                  children: [
-                                    if (!_widgetMode)
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.end,
-                                        children: [
-                                          TextButton(
-                                            onPressed: _openThemePickerDialog,
-                                            style: TextButton.styleFrom(
-                                              foregroundColor: Colors.white,
-                                            ),
-                                            child: const Text('Theme'),
-                                          ),
-                                          TextButton(
-                                            onPressed: _openEditMantraDialog,
-                                            style: TextButton.styleFrom(
-                                              foregroundColor: Colors.white,
-                                            ),
-                                            child: const Text('Edit'),
-                                          ),
-                                        ],
-                                      ),
-                                    Text(
-                                      _mantraLine1,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.8,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      _mantraLine2,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.6,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _mantraLine3,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        letterSpacing: 0.4,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 10,
-                                        horizontal: 12,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.16,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _mantraLine4,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: 0.6,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (_widgetMode)
-                                Positioned(
-                                  left: 12,
-                                  right: 92,
-                                  bottom: 10,
-                                  child: _buildWidgetModeTaskStrip(
-                                    activeSession,
-                                    activeSession == null
-                                        ? 0
-                                        : _elapsedMs(activeSession, tick),
-                                  ),
-                                ),
-                              if (_widgetMode)
-                                Positioned(
-                                  right: 10,
-                                  bottom: 10,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                            child: Column(
+                              children: [
+                                if (!_widgetMode)
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
                                     children: [
-                                      // Expand (exit widget mode)
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.30,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
+                                      TextButton(
+                                        onPressed: _openThemePickerDialog,
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.white,
                                         ),
-                                        child: IconButton(
-                                          tooltip: 'Expand',
-                                          onPressed: () =>
-                                              _setWidgetMode(false),
-                                          icon: const Icon(
-                                            Icons.open_in_full,
-                                            size: 16,
-                                            color: Colors.white,
-                                          ),
-                                          visualDensity: VisualDensity.compact,
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(
-                                            minWidth: 34,
-                                            minHeight: 34,
-                                          ),
-                                        ),
+                                        child: const Text('Theme'),
                                       ),
-                                      const SizedBox(width: 8),
-
-                                      // Resize handle
-                                      MouseRegion(
-                                        cursor: SystemMouseCursors
-                                            .resizeUpLeftDownRight,
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onPanStart: (_) {
-                                            if (_isDesktopPlatform()) {
-                                              windowManager.startResizing(
-                                                ResizeEdge.bottomRight,
-                                              );
-                                            }
-                                          },
-                                          child: Container(
-                                            width: 18,
-                                            height: 18,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(
-                                                alpha: 0.22,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: const Icon(
-                                              Icons.drag_handle,
-                                              size: 14,
-                                              color: Colors.white,
-                                            ),
-                                          ),
+                                      TextButton(
+                                        onPressed: _openEditMantraDialog,
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.white,
                                         ),
+                                        child: const Text('Edit'),
                                       ),
                                     ],
                                   ),
+                                Text(
+                                  _mantraLine1,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.8,
+                                  ),
                                 ),
-                            ],
+                                const SizedBox(height: 6),
+                                Text(
+                                  _mantraLine2,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _mantraLine3,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                    horizontal: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.16),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _mantraLine4,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.6,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                          if (_widgetMode)
+                            Positioned(
+                              left: 12,
+                              right: 92,
+                              bottom: 10,
+                              child: _buildWidgetModeTaskStrip(
+                                activeSession,
+                                activeSession == null ? 0 : _elapsedMs(activeSession, tick),
+                              ),
+                            ),
+                          if (_widgetMode)
+                            Positioned(
+                              right: 10,
+                              bottom: 10,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.30),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: IconButton(
+                                      tooltip: 'Expand',
+                                      onPressed: () => _setWidgetMode(false),
+                                      icon: const Icon(
+                                        Icons.open_in_full,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                      visualDensity: VisualDensity.compact,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 34,
+                                        minHeight: 34,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  MouseRegion(
+                                    cursor: SystemMouseCursors.resizeUpLeftDownRight,
+                                    child: GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onPanUpdate: (details) async {
+                                        await _resizeWidgetMode(details);
+                                      },
+                                      child: Container(
+                                        width: 18,
+                                        height: 18,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.22),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Icon(
+                                          Icons.drag_handle,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
-                    );
+                    ),
+                  );
                   }
 
                   return Column(

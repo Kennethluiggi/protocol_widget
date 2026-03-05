@@ -1695,7 +1695,10 @@ Future<void> _initialize() async {
                       alpha: 0.85,
                     ),
                   ),
-                  onPressed: () => _doneTask(activeSession),
+                  onPressed: () async {
+                    await _doneTask(activeSession);
+                    await _setWidgetMode(false);
+                  },
                   child: const Text('Done'),
                 ),
               ],

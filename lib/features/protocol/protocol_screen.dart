@@ -651,9 +651,8 @@ Future<void> _initialize() async {
       );
     }
 
-    
+
     await windowManager.setHasShadow(true);
-    await windowManager.setResizable(true);
 
     final bg = Theme.of(context).scaffoldBackgroundColor;
     await windowManager.setBackgroundColor(bg);
@@ -670,6 +669,7 @@ Future<void> _initialize() async {
     await windowManager.setMaximumSize(
       Size(normalBounds.maxWidth, normalBounds.maxHeight),
     );
+    await windowManager.setResizable(true);
 
     if (!_appliedInitialNormalBounds) {
       _appliedInitialNormalBounds = true;

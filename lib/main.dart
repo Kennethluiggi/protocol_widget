@@ -5,6 +5,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'data/isar_db.dart';
 import 'features/protocol/protocol_screen.dart';
+import '../../debug/debug_log.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,8 +25,13 @@ Future<void> main() async {
         windowButtonVisibility: false,
       );
       await windowManager.setResizable(true);
+      
+      final s = await windowManager.getSize();
+      DebugLog.window('[main.dart readyToShow] size=${s.width}x${s.height}');
+
       await windowManager.show();
       await windowManager.focus();
+
     });
   }
 

@@ -8,7 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:isar/isar.dart';
 import '../../data/isar_db.dart';
 import '../../data/models/task.dart';
-
+import '../../debug/debug_log.dart';
 class ProtocolScreen extends StatefulWidget {
   const ProtocolScreen({super.key});
 
@@ -130,7 +130,7 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
 Future<void> _handleResume() async {
   if (!_isDesktopPlatform()) return;
 
-  debugPrint('[Lifecycle] resumed -> resetting Isar + reloading UI');
+  DebugLog.lifecycle('[Lifecycle] resumed -> resetting Isar + reloading UI');
 
   // Force a clean DB reopen after sleep/resume.
   await IsarDb.reset();
@@ -141,8 +141,9 @@ Future<void> _handleResume() async {
   setState(() {});
 }
 
+
 Future<void> _initialize() async {
-  debugPrint('HIT _initialize');
+  DebugLog.init('HIT _initialize');
 
   if (!_isDesktopPlatform()) return;
 
@@ -589,7 +590,8 @@ Future<void> _initialize() async {
   }
 
   Future<void> _applyWidgetModeWindowState(bool enabled) async {
-    debugPrint('HIT _applyWidgetModeWindowState enabled=$enabled');
+    DebugLog.widgetMode('HIT _applyWidgetModeWindowState enabled=$enabled');
+    DebugLog.window('ENTER enabled=$enabled (start)');
     if (!_isDesktopPlatform()) return;
 
     if (enabled) {
@@ -601,6 +603,7 @@ Future<void> _initialize() async {
         _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
         _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
       );
+      DebugLog.window('WIDGET enabled=true after computing widgetModeSize');
 
       // Apply widget bounds constraints.
       await windowManager.setMinimumSize(
@@ -609,6 +612,7 @@ Future<void> _initialize() async {
       await windowManager.setMaximumSize(
         Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
       );
+      DebugLog.window('WIDGET enabled=true after setMinimumSize/setMaximumSize');
       // Force Windows to re-apply sizing constraints after mode switches.
       await windowManager.setResizable(false);
       await Future.delayed(const Duration(milliseconds: 20));
@@ -616,9 +620,11 @@ Future<void> _initialize() async {
       // Widget mode: truly frameless + no OS resize frame (we resize via our handle).
       await windowManager.setHasShadow(false);
       await windowManager.setAsFrameless();
-      await windowManager.setResizable(false);
 
+      // IMPORTANT: do NOT call setAsFrameless() here.
+      // It can remove native resize frame styles and may not restore them reliably.
       await windowManager.setBackgroundColor(Colors.transparent);
+      await windowManager.setResizable(false);
 
       // Compute final target size ONCE, clamp ONCE, set ONCE.
       final target = Size(
@@ -628,6 +634,7 @@ Future<void> _initialize() async {
       _widgetModeSize = target;
 
       await windowManager.setSize(target);
+      DebugLog.window('WIDGET enabled=true after setSize(target)');
 
       // Center only the first time we ever enter widget mode to avoid jumpiness.
       if (!_centeredWidgetOnce) {
@@ -641,25 +648,48 @@ Future<void> _initialize() async {
     // Exiting widget mode -> restore normal bounds (native titlebar stays hidden;
     // we use a custom title bar in Flutter permanently).
     final normalBounds = _normalWindowBounds();
+    DebugLog.window(
+      '[WindowDebug][NORMAL bounds] '
+      'min=(${normalBounds.minWidth},${normalBounds.minHeight}) '
+      'max=(${normalBounds.maxWidth},${normalBounds.maxHeight})'
+    );
+    DebugLog.window('NORMAL enabled=false after computing normalBounds');
 
     // Compute restore size first (clamped to normal bounds).
     Size? restoreSize = _fullModeWindowSize;
+
+    DebugLog.window('[WindowDebug][restoreSize before clamp] $restoreSize');
+
     if (restoreSize != null) {
-      restoreSize = Size(
+      final clamped = Size(
         restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
         restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
       );
+      DebugLog.window('[WindowDebug][restoreSize AFTER clamp] $clamped');
+      restoreSize = clamped;
+    } else {
+      DebugLog.window('[WindowDebug][restoreSize is null]');
     }
 
+    DebugLog.window('NORMAL enabled=false after restoreSize clamp');
+    DebugLog.window('NORMAL enabled=false after computing restoreSize=$restoreSize');
+
+  // Restore a resizable Windows window style after widget-mode frameless.
+    await windowManager.setTitleBarStyle(
+      TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+    );
 
     await windowManager.setHasShadow(true);
 
     final bg = Theme.of(context).scaffoldBackgroundColor;
     await windowManager.setBackgroundColor(bg);
+    DebugLog.window('NORMAL enabled=false after setBackgroundColor');
 
     // Set the target normal size BEFORE raising min constraints.
     if (restoreSize != null) {
       await windowManager.setSize(restoreSize);
+      DebugLog.window('NORMAL enabled=false after setSize(restoreSize)');
     }
 
     // Now apply normal min/max constraints.
@@ -670,6 +700,8 @@ Future<void> _initialize() async {
       Size(normalBounds.maxWidth, normalBounds.maxHeight),
     );
     await windowManager.setResizable(true);
+    DebugLog.window('NORMAL enabled=false AFTER min/max/resizable');
+    DebugLog.window('NORMAL enabled=false after setMinimumSize/setMaximumSize/setResizable(true)');
 
     if (!_appliedInitialNormalBounds) {
       _appliedInitialNormalBounds = true;
@@ -677,7 +709,7 @@ Future<void> _initialize() async {
   }
 
   Future<void> _applyNormalBoundsOnlyOnce() async {
-    debugPrint('HIT _applyNormalBoundsOnlyOnce');
+    DebugLog.window('HIT _applyNormalBoundsOnlyOnce');
     if (!_isDesktopPlatform()) return;
     if (_widgetMode) return;
     if (_appliedInitialNormalBounds) return;
@@ -745,7 +777,7 @@ Future<void> _initialize() async {
 
     // (Optional debug)
     final total = await isar.tasks.count();
-    debugPrint('ISAR total tasks count = $total, planId=$_planId');
+    DebugLog.db('ISAR total tasks count = $total, planId=$_planId');
 
     final tasks = await isar.tasks
         .filter()

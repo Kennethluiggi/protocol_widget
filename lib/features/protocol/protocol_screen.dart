@@ -2786,68 +2786,94 @@ Future<void> _initialize() async {
         task.plannedStartMin != null &&
         task.targetMin != null &&
         !startBlockedByOtherSession;
+
+    Widget constrainedControls(Widget child) {
+      return SizedBox(
+        width: _controlColumnWidth,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.max,
+          children: [child],
+        ),
+      );
+    }
+
     switch (task.status) {
       case 'running':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _pauseTask(task),
+                child: const Text('Pause'),
               ),
-              onPressed: () => _pauseTask(task),
-              child: const Text('Pause'),
-            ),
-            const SizedBox(width: 2),
-            FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: const Size(0, 28),
+              const SizedBox(width: 2),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, 28),
+                ),
+                onPressed: () => _doneTask(task),
+                child: const Text('Done'),
               ),
-              onPressed: () => _doneTask(task),
-              child: const Text('Done'),
-            ),
-          ],
+            ],
+          ),
         );
       case 'paused':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: canStart ? () => _startTask(task) : null,
+                child: const Text('Start'),
               ),
-              onPressed: canStart ? () => _startTask(task) : null,
-              child: const Text('Start'),
-            ),
-            const SizedBox(width: 2),
-            FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: const Size(0, 28),
+              const SizedBox(width: 2),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, 28),
+                ),
+                onPressed: () => _doneTask(task),
+                child: const Text('Done'),
               ),
-              onPressed: () => _doneTask(task),
-              child: const Text('Done'),
-            ),
-          ],
+            ],
+          ),
         );
       case 'done':
-        return const Icon(Icons.check_circle, color: Colors.green);
+        return constrainedControls(
+          const Icon(Icons.check_circle, color: Colors.green),
+        );
       case 'not_started':
       default:
-        return TextButton(
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: canStart ? () => _startTask(task) : null,
+            child: const Text('Start'),
           ),
-          onPressed: canStart ? () => _startTask(task) : null,
-          child: const Text('Start'),
         );
     }
   }

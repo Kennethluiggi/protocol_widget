@@ -1095,6 +1095,47 @@ Future<void> _initialize() async {
     }
     return null;
   }
+    List<Task> _lockedTasksInOrder(List<Task> tasks) {
+    final locked = tasks.where(_isMandatoryTask).toList();
+    locked.sort((a, b) {
+      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
+    });
+    return locked;
+  }
+
+  String? _lockedSequenceValidationMessage({
+    required Task selected,
+    required List<Task> tasks,
+    required int proposedStart,
+  }) {
+    final selectedOrder = _ritualOrder(selected.title);
+    if (selectedOrder == null) return null;
+
+    final locked = _lockedTasksInOrder(tasks);
+
+    for (final other in locked) {
+      if (other.id == selected.id) continue;
+
+      final otherOrder = _ritualOrder(other.title);
+      final otherStart = other.plannedStartMin;
+
+      if (otherOrder == null || otherStart == null) continue;
+
+      // A later locked row cannot start before an earlier locked row.
+      if (selectedOrder > otherOrder && proposedStart < otherStart) {
+        return 'This locked task must stay after the earlier locked tasks. '
+            'Choose a time that keeps rows 1–4 in order.';
+      }
+
+      // An earlier locked row cannot start after a later locked row.
+      if (selectedOrder < otherOrder && proposedStart > otherStart) {
+        return 'This locked task must stay before the later locked tasks. '
+            'Choose a time that keeps rows 1–4 in order.';
+      }
+    }
+
+    return null;
+  }
 
   Future<void> _showScheduleMessageDialog({
     required String title,
@@ -1467,10 +1508,25 @@ Future<void> _initialize() async {
     );
     if (newStart == null || oldStart == newStart) return;
 
+    if (_isMandatoryTask(selected)) {
+      final lockedValidationMessage = _lockedSequenceValidationMessage(
+        selected: selected,
+        tasks: tasks,
+        proposedStart: newStart,
+      );
+
+      if (lockedValidationMessage != null) {
+        await _showScheduleMessageDialog(
+          title: 'Locked task order',
+          message: lockedValidationMessage,
+        );
+        return;
+      }
+    }
+
     selected.plannedStartMin = newStart;
-    selected.plannedEndMin = selected.targetMin == null
-        ? null
-        : newStart + selected.targetMin!;
+    selected.plannedEndMin =
+        selected.targetMin == null ? null : newStart + selected.targetMin!;
 
     await _saveTask(selected);
 

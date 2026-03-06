@@ -2727,6 +2727,8 @@ Future<void> _initialize() async {
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 28),
               ),
               onPressed: () => _doneTask(task),
               child: const Text('Done'),
@@ -2750,6 +2752,8 @@ Future<void> _initialize() async {
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 28),
               ),
               onPressed: () => _doneTask(task),
               child: const Text('Done'),

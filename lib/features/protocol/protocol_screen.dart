@@ -801,6 +801,7 @@ Future<void> _initialize() async {
     final titleController = TextEditingController();
     final goalController = TextEditingController();
     TimeOfDay? plannedStart;
+    int? plannedStartTimelineMin;
     String? titleError;
     String? goalError;
     String? startError;
@@ -878,6 +879,7 @@ Future<void> _initialize() async {
                             );
                             if (picked != null) {
                               setDialogState(() {
+                                plannedStartTimelineMin = picked;
                                 plannedStart = TimeOfDay(
                                   hour: (picked % 1440) ~/ 60,
                                   minute: (picked % 1440) % 60,
@@ -938,6 +940,7 @@ Future<void> _initialize() async {
                     if (resolvedStart == null) return;
 
                     setDialogState(() {
+                      plannedStartTimelineMin = resolvedStart;
                       plannedStart = TimeOfDay(
                         hour: (resolvedStart % 1440) ~/ 60,
                         minute: (resolvedStart % 1440) % 60,
@@ -957,7 +960,8 @@ Future<void> _initialize() async {
     if (didSave == true) {
       final title = titleController.text.trim();
       final goalMin = int.parse(goalController.text.trim());
-      final startMin = plannedStart!.hour * 60 + plannedStart!.minute;
+      final startMin = plannedStartTimelineMin ??
+          (plannedStart!.hour * 60 + plannedStart!.minute);
       final endMin = startMin + goalMin;
 
       var nextOrderIndex = 0;
@@ -982,6 +986,10 @@ Future<void> _initialize() async {
       });
 
       final updatedTasks = await _loadPlanTasks();
+      final addedIndex = updatedTasks.indexWhere((t) => t.id == newTask.id);
+      if (addedIndex >= 0) {
+        await _cascadeOverlapsFromIndex(updatedTasks, addedIndex);
+      }
       await _sortTasksByStartTime(updatedTasks);
       if (mounted) setState(() {});
     }
@@ -1281,6 +1289,52 @@ Future<void> _sortTasksByStartTime(List<Task> tasks) async {
   });
 }
 
+Future<void> _cascadeOverlapsFromIndex(List<Task> tasks, int editedIndex) async {
+  if (editedIndex < 0 || editedIndex >= tasks.length) return;
+
+  var cursorEnd = tasks[editedIndex].plannedEndMin;
+  if (cursorEnd == null) return;
+
+  final changed = <Task>[];
+
+  for (var i = editedIndex + 1; i < tasks.length; i++) {
+    final task = tasks[i];
+    final oldStart = task.plannedStartMin;
+    final oldEnd = task.plannedEndMin;
+
+    if (oldStart == null || oldEnd == null) break;
+    if (oldStart >= cursorEnd) break;
+
+    var duration = oldEnd - oldStart;
+    if (duration <= 0) {
+      duration = (oldEnd + 1440) - oldStart;
+    }
+    if (duration <= 0) {
+      final target = task.targetMin;
+      if (target != null && target > 0) {
+        duration = target;
+      } else {
+        break;
+      }
+    }
+
+    final newStart = cursorEnd;
+    final newEnd = newStart + duration;
+
+    task.plannedStartMin = newStart;
+    task.plannedEndMin = newEnd;
+    changed.add(task);
+    cursorEnd = newEnd;
+  }
+
+  if (changed.isEmpty) return;
+
+  final isar = await IsarDb.instance();
+  await isar.writeTxn(() async {
+    await isar.tasks.putAll(changed);
+  });
+}
+
   Task? _activeSessionTask(List<Task> tasks) {
     for (final task in tasks) {
       if (task.status == 'running') return task;
@@ -1351,6 +1405,8 @@ Future<void> _sortTasksByStartTime(List<Task> tasks) async {
     selected.plannedEndMin = selected.targetMin == null
         ? null
         : newStart + selected.targetMin!;
+    final editedIndex = tasks.indexWhere((t) => t.id == selected.id);
+    await _cascadeOverlapsFromIndex(tasks, editedIndex);
     await _sortTasksByStartTime(tasks);
     setState(() {});
   }

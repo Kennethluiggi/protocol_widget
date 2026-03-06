@@ -1218,45 +1218,68 @@ Future<void> _initialize() async {
     }
   }
 
-  Future<void> _sortTasksByStartTime(List<Task> tasks) async {
-    final ritualTasks = <Task>[];
-    final nonRitualTasks = <Task>[];
+Future<void> _sortTasksByStartTime(List<Task> tasks) async {
+  final ritualTasks = <Task>[];
+  final nonRitualTasks = <Task>[];
 
-    for (final task in tasks) {
-      if (_ritualOrder(task.title) != null) {
-        ritualTasks.add(task);
-      } else {
-        nonRitualTasks.add(task);
-      }
+  for (final task in tasks) {
+    if (_ritualOrder(task.title) != null) {
+      ritualTasks.add(task);
+    } else {
+      nonRitualTasks.add(task);
     }
-
-    ritualTasks.sort((a, b) {
-      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
-    });
-
-    nonRitualTasks.sort((a, b) {
-      final aStart = a.plannedStartMin;
-      final bStart = b.plannedStartMin;
-      if (aStart == null && bStart == null) {
-        return a.orderIndex.compareTo(b.orderIndex);
-      }
-      if (aStart == null) return 1;
-      if (bStart == null) return -1;
-      final byStart = aStart.compareTo(bStart);
-      if (byStart != 0) return byStart;
-      return a.orderIndex.compareTo(b.orderIndex);
-    });
-
-    final combined = <Task>[...ritualTasks, ...nonRitualTasks];
-    for (var i = 0; i < combined.length; i++) {
-      combined[i].orderIndex = i;
-    }
-
-    final isar = await IsarDb.instance();
-    await isar.writeTxn(() async {
-      await isar.tasks.putAll(combined);
-    });
   }
+
+  ritualTasks.sort((a, b) {
+    return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
+  });
+
+  int? timelineStartForSort(Task task) {
+    final start = task.plannedStartMin;
+    final end = task.plannedEndMin;
+    if (start == null || end == null) return null;
+
+    final isLockedTask = _isMandatoryTask(task);
+
+    final startOffset = _effectiveDayOffset(
+      isLockedTask: isLockedTask,
+      minutes: start,
+    );
+
+    // For sorting, treat early-morning non-locked tasks as "next day"
+    // by shifting their start forward by +1440.
+    final startTimeline = start + (startOffset * 1440);
+
+    return startTimeline;
+  }
+
+  nonRitualTasks.sort((a, b) {
+    final aStartTimeline = timelineStartForSort(a);
+    final bStartTimeline = timelineStartForSort(b);
+
+    // Untimed tasks stay in place relative to each other, and sort after timed tasks.
+    if (aStartTimeline == null && bStartTimeline == null) {
+      return a.orderIndex.compareTo(b.orderIndex);
+    }
+    if (aStartTimeline == null) return 1;
+    if (bStartTimeline == null) return -1;
+
+    final byStart = aStartTimeline.compareTo(bStartTimeline);
+    if (byStart != 0) return byStart;
+
+    return a.orderIndex.compareTo(b.orderIndex);
+  });
+
+  final combined = <Task>[...ritualTasks, ...nonRitualTasks];
+  for (var i = 0; i < combined.length; i++) {
+    combined[i].orderIndex = i;
+  }
+
+  final isar = await IsarDb.instance();
+  await isar.writeTxn(() async {
+    await isar.tasks.putAll(combined);
+  });
+}
 
   Task? _activeSessionTask(List<Task> tasks) {
     for (final task in tasks) {
@@ -1538,7 +1561,7 @@ Future<void> _initialize() async {
 
   int? _activeWindowTaskIndex(List<Task> tasks, DateTime now) {
     final nowMinutes = _minutesSinceMidnight(now);
-    final candidates = <(int index, int startTimeline, int endTimeline)>[];
+    final candidates = <({int index, int startTimeline, int endTimeline})>[];
 
     for (var index = 0; index < tasks.length; index++) {
       final task = tasks[index];

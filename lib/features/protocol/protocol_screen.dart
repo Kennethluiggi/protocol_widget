@@ -1158,6 +1158,25 @@ Future<void> _initialize() async {
     );
   }
 
+  Future<void> _showSettingsComingSoonDialog(String featureName) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Coming soon'),
+          content: Text('$featureName is planned but not implemented yet.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   Future<bool> _showScheduleConfirmDialog({
     required String title,
     required String message,
@@ -2482,6 +2501,64 @@ Future<void> _initialize() async {
                           ],
                         ),
                       ),
+                      if (!_widgetMode)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              PopupMenuButton<String>(
+                                tooltip: 'Settings',
+                                onSelected: (value) async {
+                                  switch (value) {
+                                    case 'import_png':
+                                      await _showSettingsComingSoonDialog(
+                                        'Import PNG',
+                                      );
+                                      break;
+                                    case 'widget_task_time_only':
+                                      await _showSettingsComingSoonDialog(
+                                        'Widget mode: task + time only',
+                                      );
+                                      break;
+                                    case 'widget_window_color':
+                                      await _showSettingsComingSoonDialog(
+                                        'Widget window color',
+                                      );
+                                      break;
+                                    case 'highlighted_row_color':
+                                      await _showSettingsComingSoonDialog(
+                                        'Highlighted row color',
+                                      );
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'import_png',
+                                    child: Text('Import PNG'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'widget_task_time_only',
+                                    child: Text('Widget mode: task + time only'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'widget_window_color',
+                                    child: Text('Widget window color'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'highlighted_row_color',
+                                    child: Text('Highlighted row color'),
+                                  ),
+                                ],
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(Icons.settings),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       if (!_widgetMode)
                         Expanded(
                           child: Padding(

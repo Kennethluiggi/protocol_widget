@@ -1,17 +1,50 @@
-# protocol_widget
+# Protocol Widget
 
-A new Flutter project.
+Protocol Widget is a Flutter desktop-first productivity app focused on running a daily protocol of tasks with lightweight timing controls, fast status changes, and local persistence. It is optimized for Windows today, with a compact widget mode for always-visible focus and a full desktop mode for planning and control.
 
-## Getting Started
+## Key Features
 
-This project is a starting point for a Flutter application.
+- **Desktop-first workflow** with custom window chrome and direct window controls.
+- **Widget mode** for a compact, always-on-top, frameless focus surface.
+- **Task execution controls** for running, pausing, resuming, and completing protocol items.
+- **Local-first data model** backed by Isar for offline persistence.
+- **Debug-gated diagnostics** for windowing, lifecycle, init, DB, and widget mode behavior.
 
-A few resources to get you started if this is your first Flutter project:
+## Quick Start (Windows)
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+### Prerequisites
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Flutter SDK installed and on your PATH.
+- Windows desktop toolchain enabled for Flutter.
+- A compatible C++ build environment for Flutter desktop.
+
+### Run
+
+```bash
+flutter pub get
+flutter run -d windows
+```
+
+### Analyze and test
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Docs
+
+- [Documentation Home](docs/index.md)
+- [Architecture Overview](docs/architecture.md)
+- [Windowing and Widget Mode](docs/windowing.md)
+- [Task Engine and Persistence](docs/tasks.md)
+- [Debug Logging Guide](docs/debugging.md)
+- [Contributing](docs/contributing.md)
+
+## Debug Logging
+
+Debug logging is controlled through `--dart-define` flags and only emits in debug builds when enabled. See [docs/debugging.md](docs/debugging.md) for category details and exact run commands.
+
+## Architecture
+
+For a high-level system map (UI, windowing, and Isar data layers), start at [docs/architecture.md](docs/architecture.md).

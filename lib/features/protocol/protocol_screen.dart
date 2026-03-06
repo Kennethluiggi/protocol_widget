@@ -1289,51 +1289,60 @@ Future<void> _sortTasksByStartTime(List<Task> tasks) async {
   });
 }
 
-Future<void> _cascadeOverlapsFromIndex(List<Task> tasks, int editedIndex) async {
-  if (editedIndex < 0 || editedIndex >= tasks.length) return;
+  Future<void> _cascadeOverlapsFromIndex(List<Task> tasks, int editedIndex) async {
+    if (editedIndex < 0 || editedIndex >= tasks.length) return;
 
-  var cursorEnd = tasks[editedIndex].plannedEndMin;
-  if (cursorEnd == null) return;
+    final int? initialCursorEnd = tasks[editedIndex].plannedEndMin;
+    if (initialCursorEnd == null) return;
 
-  final changed = <Task>[];
+    int runningEnd = initialCursorEnd;
+    final changed = <Task>[];
 
-  for (var i = editedIndex + 1; i < tasks.length; i++) {
-    final task = tasks[i];
-    final oldStart = task.plannedStartMin;
-    final oldEnd = task.plannedEndMin;
+    for (var i = editedIndex + 1; i < tasks.length; i++) {
+      final task = tasks[i];
+      final int? oldStart = task.plannedStartMin;
+      final int? oldEnd = task.plannedEndMin;
 
-    if (oldStart == null || oldEnd == null) break;
-    if (oldStart >= cursorEnd) break;
+      // Stop cascade at the first untimed task.
+      if (oldStart == null || oldEnd == null) break;
 
-    var duration = oldEnd - oldStart;
-    if (duration <= 0) {
-      duration = (oldEnd + 1440) - oldStart;
-    }
-    if (duration <= 0) {
-      final target = task.targetMin;
-      if (target != null && target > 0) {
-        duration = target;
-      } else {
-        break;
+      // Stop cascade as soon as there is no overlap anymore.
+      if (oldStart >= runningEnd) break;
+
+      int duration = oldEnd - oldStart;
+
+      // Cross-midnight legacy duration handling.
+      if (duration <= 0) {
+        duration = (oldEnd + 1440) - oldStart;
       }
+
+      // Fallback to targetMin if needed.
+      if (duration <= 0) {
+        final int? target = task.targetMin;
+        if (target != null && target > 0) {
+          duration = target;
+        } else {
+          break;
+        }
+      }
+
+      final int newStart = runningEnd;
+      final int newEnd = newStart + duration;
+
+      task.plannedStartMin = newStart;
+      task.plannedEndMin = newEnd;
+      changed.add(task);
+
+      runningEnd = newEnd;
     }
 
-    final newStart = cursorEnd;
-    final newEnd = newStart + duration;
+    if (changed.isEmpty) return;
 
-    task.plannedStartMin = newStart;
-    task.plannedEndMin = newEnd;
-    changed.add(task);
-    cursorEnd = newEnd;
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.putAll(changed);
+    });
   }
-
-  if (changed.isEmpty) return;
-
-  final isar = await IsarDb.instance();
-  await isar.writeTxn(() async {
-    await isar.tasks.putAll(changed);
-  });
-}
 
   Task? _activeSessionTask(List<Task> tasks) {
     for (final task in tasks) {

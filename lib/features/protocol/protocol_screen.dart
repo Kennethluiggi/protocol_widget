@@ -54,7 +54,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;
-  static const double _controlColumnWidth = 220;
+  static const double _controlColumnWidth = 140;
   static const int _taskTitleMaxChars = 40;
   static const Set<String> _mandatoryRitualTitles = {
     _walkTitle,
@@ -2714,8 +2714,6 @@ Future<void> _initialize() async {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_formatDuration(elapsedMs)),
-            const SizedBox(width: 6),
             TextButton(
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
@@ -2739,8 +2737,6 @@ Future<void> _initialize() async {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_formatDuration(elapsedMs)),
-            const SizedBox(width: 6),
             TextButton(
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
@@ -2761,14 +2757,7 @@ Future<void> _initialize() async {
           ],
         );
       case 'done':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green),
-            const SizedBox(width: 6),
-            Text(_formatDuration(elapsedMs)),
-          ],
-        );
+        return const Icon(Icons.check_circle, color: Colors.green);
       case 'not_started':
       default:
         return TextButton(

@@ -2505,6 +2505,64 @@ Future<void> _initialize() async {
                               ),
                               child: Column(
                                 children: [
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        8,
+                                        6,
+                                        8,
+                                        4,
+                                      ),
+                                      child: PopupMenuButton<String>(
+                                        tooltip: 'Settings',
+                                        onSelected: (value) async {
+                                          switch (value) {
+                                            case 'always_on_top':
+                                              await _setAlwaysOnTop(
+                                                !_alwaysOnTop,
+                                              );
+                                              break;
+                                            case 'widget_mode':
+                                              await _setWidgetMode(!_widgetMode);
+                                              break;
+                                            case 'header_theme':
+                                              await _openThemePickerDialog();
+                                              break;
+                                            case 'edit_mantra':
+                                              await _openEditMantraDialog();
+                                              break;
+                                          }
+                                        },
+                                        itemBuilder: (context) => [
+                                          PopupMenuItem<String>(
+                                            value: 'always_on_top',
+                                            child: Text(
+                                              'Always on top: ${_alwaysOnTop ? 'On' : 'Off'}',
+                                            ),
+                                          ),
+                                          PopupMenuItem<String>(
+                                            value: 'widget_mode',
+                                            child: Text(
+                                              'Widget mode: ${_widgetMode ? 'On' : 'Off'}',
+                                            ),
+                                          ),
+                                          const PopupMenuItem<String>(
+                                            value: 'header_theme',
+                                            child: Text('Header theme'),
+                                          ),
+                                          const PopupMenuItem<String>(
+                                            value: 'edit_mantra',
+                                            child: Text('Edit mantra'),
+                                          ),
+                                        ],
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(4),
+                                          child: Icon(Icons.settings),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                   _buildHeaderRow(),
                                   const Divider(height: 1),
                                   Expanded(

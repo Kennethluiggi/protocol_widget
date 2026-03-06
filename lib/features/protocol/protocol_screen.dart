@@ -54,7 +54,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
 
   static const double _timeColumnWidth = 190;
   static const double _goalColumnWidth = 130;
-  static const double _controlColumnWidth = 220;
+  static const double _controlColumnWidth = 140;
   static const int _taskTitleMaxChars = 40;
   static const Set<String> _mandatoryRitualTitles = {
     _walkTitle,
@@ -916,7 +916,7 @@ Future<void> _initialize() async {
                     final parsed = int.tryParse(goalController.text.trim());
                     final missingTitle = titleController.text.trim().isEmpty;
                     final missingGoal = parsed == null || parsed <= 0;
-                    final missingStart = plannedStart == null;
+                    final missingStart = plannedStartTimelineMin == null;
                     if (missingTitle || missingGoal || missingStart) {
                       setDialogState(() {
                         titleError = missingTitle ? 'Title is required' : null;
@@ -929,23 +929,6 @@ Future<void> _initialize() async {
                       });
                       return;
                     }
-
-                    final resolvedStart = await _pickValidStartTime(
-                      tasks: tasks,
-                      isRitualTask: false,
-                      goalMinutes: parsed,
-                      initialMinutes:
-                          plannedStart!.hour * 60 + plannedStart!.minute,
-                    );
-                    if (resolvedStart == null) return;
-
-                    setDialogState(() {
-                      plannedStartTimelineMin = resolvedStart;
-                      plannedStart = TimeOfDay(
-                        hour: (resolvedStart % 1440) ~/ 60,
-                        minute: (resolvedStart % 1440) % 60,
-                      );
-                    });
                     Navigator.of(context).pop(true);
                   },
                   child: const Text('Save'),
@@ -1174,6 +1157,25 @@ Future<void> _initialize() async {
       },
     );
   }
+
+  Future<void> _showSettingsComingSoonDialog(String featureName) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Coming soon'),
+          content: Text('$featureName is planned but not implemented yet.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
   Future<bool> _showScheduleConfirmDialog({
     required String title,
@@ -2500,6 +2502,64 @@ Future<void> _initialize() async {
                         ),
                       ),
                       if (!_widgetMode)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              PopupMenuButton<String>(
+                                tooltip: 'Settings',
+                                onSelected: (value) async {
+                                  switch (value) {
+                                    case 'import_png':
+                                      await _showSettingsComingSoonDialog(
+                                        'Import PNG',
+                                      );
+                                      break;
+                                    case 'widget_task_time_only':
+                                      await _showSettingsComingSoonDialog(
+                                        'Widget mode: task + time only',
+                                      );
+                                      break;
+                                    case 'widget_window_color':
+                                      await _showSettingsComingSoonDialog(
+                                        'Widget window color',
+                                      );
+                                      break;
+                                    case 'highlighted_row_color':
+                                      await _showSettingsComingSoonDialog(
+                                        'Highlighted row color',
+                                      );
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'import_png',
+                                    child: Text('Import PNG'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'widget_task_time_only',
+                                    child: Text('Widget mode: task + time only'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'widget_window_color',
+                                    child: Text('Widget window color'),
+                                  ),
+                                  PopupMenuItem<String>(
+                                    value: 'highlighted_row_color',
+                                    child: Text('Highlighted row color'),
+                                  ),
+                                ],
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(Icons.settings),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (!_widgetMode)
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -2731,8 +2791,6 @@ Future<void> _initialize() async {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_formatDuration(elapsedMs)),
-            const SizedBox(width: 6),
             TextButton(
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
@@ -2746,6 +2804,8 @@ Future<void> _initialize() async {
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 28),
               ),
               onPressed: () => _doneTask(task),
               child: const Text('Done'),
@@ -2756,8 +2816,6 @@ Future<void> _initialize() async {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_formatDuration(elapsedMs)),
-            const SizedBox(width: 6),
             TextButton(
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,
@@ -2771,6 +2829,8 @@ Future<void> _initialize() async {
               style: FilledButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: const Size(0, 28),
               ),
               onPressed: () => _doneTask(task),
               child: const Text('Done'),
@@ -2778,14 +2838,7 @@ Future<void> _initialize() async {
           ],
         );
       case 'done':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green),
-            const SizedBox(width: 6),
-            Text(_formatDuration(elapsedMs)),
-          ],
-        );
+        return const Icon(Icons.check_circle, color: Colors.green);
       case 'not_started':
       default:
         return TextButton(

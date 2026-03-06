@@ -82,6 +82,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
 
   late Future<void> _initFuture;
   late final Timer _timer;
+  late final Timer _currentWindowRefreshTimer;
 
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
@@ -110,12 +111,19 @@ void initState() {
   _timer = Timer.periodic(const Duration(seconds: 1), (_) {
     _ticker.value = DateTime.now();
   });
+  _currentWindowRefreshTimer = Timer.periodic(const Duration(seconds: 30), (
+    _,
+  ) {
+    if (!mounted) return;
+    setState(() {});
+  });
 }
 
 @override
 void dispose() {
   WidgetsBinding.instance.removeObserver(this);
   _timer.cancel();
+  _currentWindowRefreshTimer.cancel();
   _ticker.dispose();
   super.dispose();
 }
@@ -1510,6 +1518,72 @@ Future<void> _initialize() async {
     return _mandatoryRitualTitles.contains(task.title);
   }
 
+  DateTime _nowLocal() => DateTime.now();
+
+  int _minutesSinceMidnight(DateTime dt) => dt.hour * 60 + dt.minute;
+
+  ({int startMinutes, int endMinutes})? _scheduledWindowMinutes(Task task) {
+    final start = task.plannedStartMin;
+    final end = task.plannedEndMin;
+    if (start == null || end == null) return null;
+    return (startMinutes: start, endMinutes: end);
+  }
+
+  bool _isEarlyMorningMinutes(int minutes) => minutes >= 0 && minutes < 360;
+
+  int _effectiveDayOffset({required bool isLockedTask, required int minutes}) {
+    if (isLockedTask) return 0;
+    return _isEarlyMorningMinutes(minutes) ? 1 : 0;
+  }
+
+  int? _activeWindowTaskIndex(List<Task> tasks, DateTime now) {
+    final nowMinutes = _minutesSinceMidnight(now);
+    final candidates = <(int index, int startTimeline, int endTimeline)>[];
+
+    for (var index = 0; index < tasks.length; index++) {
+      final task = tasks[index];
+      final window = _scheduledWindowMinutes(task);
+      if (window == null) continue;
+
+      final isLockedTask = _isMandatoryTask(task);
+      final startOffset = _effectiveDayOffset(
+        isLockedTask: isLockedTask,
+        minutes: window.startMinutes,
+      );
+      var endOffset = _effectiveDayOffset(
+        isLockedTask: isLockedTask,
+        minutes: window.endMinutes,
+      );
+
+      final crossesMidnight = window.endMinutes < window.startMinutes;
+      if (crossesMidnight && endOffset <= startOffset) {
+        endOffset = startOffset + 1;
+      }
+
+      final startTimeline = window.startMinutes + (startOffset * 1440);
+      final endTimeline = window.endMinutes + (endOffset * 1440);
+      if (endTimeline <= startTimeline) continue;
+
+      var nowTimeline = nowMinutes;
+      if (nowTimeline < startTimeline && nowTimeline + 1440 < endTimeline) {
+        nowTimeline += 1440;
+      }
+
+      final inWindow = startTimeline <= nowTimeline && nowTimeline < endTimeline;
+      if (!inWindow) continue;
+
+      candidates.add((
+        index: index,
+        startTimeline: startTimeline,
+        endTimeline: endTimeline,
+      ));
+    }
+
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => a.index.compareTo(b.index));
+    return candidates.first.index;
+  }
+
   List<Task> _deletableTasks(List<Task> tasks) {
     return tasks.where((task) => !_isMandatoryTask(task)).toList();
   }
@@ -2251,8 +2325,20 @@ Future<void> _initialize() async {
                                       separatorBuilder: (_, __) =>
                                           const SizedBox(height: 2),
                                       itemBuilder: (context, index) {
+                                        final activeWindowIndex =
+                                            _activeWindowTaskIndex(
+                                              tasks,
+                                              _nowLocal(),
+                                            );
                                         final task = tasks[index];
                                         final elapsed = _elapsedMs(task, tick);
+                                        final isCurrentWindowTask =
+                                            activeWindowIndex == index;
+                                        final rowHighlightColor =
+                                            Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: 0.12);
                                         return Padding(
                                           padding: const EdgeInsets.fromLTRB(
                                             4,
@@ -2260,10 +2346,18 @@ Future<void> _initialize() async {
                                             4,
                                             4,
                                           ),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.center,
-                                            children: [
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: isCurrentWindowTask
+                                                  ? rowHighlightColor
+                                                  : null,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              children: [
                                               SizedBox(
                                                 width: 24,
                                                 child: _isMandatoryTask(task)
@@ -2390,7 +2484,8 @@ Future<void> _initialize() async {
                                                   ],
                                                 ),
                                               ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         );
                                       },

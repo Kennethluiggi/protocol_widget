@@ -2691,7 +2691,7 @@ Future<void> _initialize() async {
                                                 width:
                                                     _deleteMode &&
                                                         !_isMandatoryTask(task)
-                                                    ? 72
+                                                    ? 76
                                                     : 40,
                                                 child: Row(
                                                   mainAxisAlignment:

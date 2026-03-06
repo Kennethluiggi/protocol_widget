@@ -2582,64 +2582,6 @@ Future<void> _initialize() async {
                               ),
                               child: Column(
                                 children: [
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        8,
-                                        6,
-                                        8,
-                                        4,
-                                      ),
-                                      child: PopupMenuButton<String>(
-                                        tooltip: 'Settings',
-                                        onSelected: (value) async {
-                                          switch (value) {
-                                            case 'always_on_top':
-                                              await _setAlwaysOnTop(
-                                                !_alwaysOnTop,
-                                              );
-                                              break;
-                                            case 'widget_mode':
-                                              await _setWidgetMode(!_widgetMode);
-                                              break;
-                                            case 'header_theme':
-                                              await _openThemePickerDialog();
-                                              break;
-                                            case 'edit_mantra':
-                                              await _openEditMantraDialog();
-                                              break;
-                                          }
-                                        },
-                                        itemBuilder: (context) => [
-                                          PopupMenuItem<String>(
-                                            value: 'always_on_top',
-                                            child: Text(
-                                              'Always on top: ${_alwaysOnTop ? 'On' : 'Off'}',
-                                            ),
-                                          ),
-                                          PopupMenuItem<String>(
-                                            value: 'widget_mode',
-                                            child: Text(
-                                              'Widget mode: ${_widgetMode ? 'On' : 'Off'}',
-                                            ),
-                                          ),
-                                          const PopupMenuItem<String>(
-                                            value: 'header_theme',
-                                            child: Text('Header theme'),
-                                          ),
-                                          const PopupMenuItem<String>(
-                                            value: 'edit_mantra',
-                                            child: Text('Edit mantra'),
-                                          ),
-                                        ],
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(4),
-                                          child: Icon(Icons.settings),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                   _buildHeaderRow(),
                                   const Divider(height: 1),
                                   Expanded(
@@ -2749,7 +2691,7 @@ Future<void> _initialize() async {
                                                 width:
                                                     _deleteMode &&
                                                         !_isMandatoryTask(task)
-                                                    ? 72
+                                                    ? 76
                                                     : 40,
                                                 child: Row(
                                                   mainAxisAlignment:
@@ -2844,68 +2786,94 @@ Future<void> _initialize() async {
         task.plannedStartMin != null &&
         task.targetMin != null &&
         !startBlockedByOtherSession;
+
+    Widget constrainedControls(Widget child) {
+      return SizedBox(
+        width: _controlColumnWidth,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.max,
+          children: [child],
+        ),
+      );
+    }
+
     switch (task.status) {
       case 'running':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _pauseTask(task),
+                child: const Text('Pause'),
               ),
-              onPressed: () => _pauseTask(task),
-              child: const Text('Pause'),
-            ),
-            const SizedBox(width: 2),
-            FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: const Size(0, 28),
+              const SizedBox(width: 2),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, 28),
+                ),
+                onPressed: () => _doneTask(task),
+                child: const Text('Done'),
               ),
-              onPressed: () => _doneTask(task),
-              child: const Text('Done'),
-            ),
-          ],
+            ],
+          ),
         );
       case 'paused':
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: canStart ? () => _startTask(task) : null,
+                child: const Text('Start'),
               ),
-              onPressed: canStart ? () => _startTask(task) : null,
-              child: const Text('Start'),
-            ),
-            const SizedBox(width: 2),
-            FilledButton.tonal(
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: const Size(0, 28),
+              const SizedBox(width: 2),
+              FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, 28),
+                ),
+                onPressed: () => _doneTask(task),
+                child: const Text('Done'),
               ),
-              onPressed: () => _doneTask(task),
-              child: const Text('Done'),
-            ),
-          ],
+            ],
+          ),
         );
       case 'done':
-        return const Icon(Icons.check_circle, color: Colors.green);
+        return constrainedControls(
+          const Icon(Icons.check_circle, color: Colors.green),
+        );
       case 'not_started':
       default:
-        return TextButton(
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        return constrainedControls(
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: canStart ? () => _startTask(task) : null,
+            child: const Text('Start'),
           ),
-          onPressed: canStart ? () => _startTask(task) : null,
-          child: const Text('Start'),
         );
     }
   }

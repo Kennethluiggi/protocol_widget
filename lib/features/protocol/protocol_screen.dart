@@ -916,7 +916,7 @@ Future<void> _initialize() async {
                     final parsed = int.tryParse(goalController.text.trim());
                     final missingTitle = titleController.text.trim().isEmpty;
                     final missingGoal = parsed == null || parsed <= 0;
-                    final missingStart = plannedStart == null;
+                    final missingStart = plannedStartTimelineMin == null;
                     if (missingTitle || missingGoal || missingStart) {
                       setDialogState(() {
                         titleError = missingTitle ? 'Title is required' : null;
@@ -929,23 +929,6 @@ Future<void> _initialize() async {
                       });
                       return;
                     }
-
-                    final resolvedStart = await _pickValidStartTime(
-                      tasks: tasks,
-                      isRitualTask: false,
-                      goalMinutes: parsed,
-                      initialMinutes:
-                          plannedStart!.hour * 60 + plannedStart!.minute,
-                    );
-                    if (resolvedStart == null) return;
-
-                    setDialogState(() {
-                      plannedStartTimelineMin = resolvedStart;
-                      plannedStart = TimeOfDay(
-                        hour: (resolvedStart % 1440) ~/ 60,
-                        minute: (resolvedStart % 1440) % 60,
-                      );
-                    });
                     Navigator.of(context).pop(true);
                   },
                   child: const Text('Save'),

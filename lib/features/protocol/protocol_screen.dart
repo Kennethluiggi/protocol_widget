@@ -986,6 +986,7 @@ Future<void> _initialize() async {
       });
 
       final updatedTasks = await _loadPlanTasks();
+      await _sortTasksByStartTime(updatedTasks);
       final addedIndex = updatedTasks.indexWhere((t) => t.id == newTask.id);
       if (addedIndex >= 0) {
         await _cascadeOverlapsFromIndex(updatedTasks, addedIndex);
@@ -1133,6 +1134,49 @@ Future<void> _initialize() async {
     );
   }
 
+  Future<bool> _showScheduleConfirmDialog({
+    required String title,
+    required String message,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 14),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(message, textAlign: TextAlign.center),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
   int _resolveStartMinutesForAnchor({
     required int pickedMinuteOfDay,
     required int anchorMinute,
@@ -1170,6 +1214,10 @@ Future<void> _initialize() async {
     int? excludedTaskId,
   }) async {
     var nextInitial = initialMinutes ?? 540;
+    final editedIndex = excludedTaskId == null
+        ? null
+        : tasks.indexWhere((t) => t.id == excludedTaskId);
+
     while (true) {
       final picked = await showTimePicker(
         context: context,
@@ -1213,11 +1261,34 @@ Future<void> _initialize() async {
       if (conflict != null) {
         final conflictStart = conflict.plannedStartMin!;
         final conflictEnd = conflict.plannedEndMin!;
-        await _showScheduleMessageDialog(
-          title: 'Schedule conflict',
-          message:
-              "This task overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). Choose a different time.",
-        );
+        final conflictIndex = tasks.indexWhere((t) => t.id == conflict.id);
+
+        bool canContinue = false;
+        if (excludedTaskId != null) {
+          if (editedIndex != null && editedIndex >= 0 && conflictIndex >= 0) {
+            canContinue = conflictIndex > editedIndex;
+          }
+        } else {
+          canContinue = conflictStart > resolvedStart;
+        }
+
+        if (canContinue) {
+          final shouldContinue = await _showScheduleConfirmDialog(
+            title: 'Schedule conflict',
+            message:
+                "This overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). If you continue, the app will automatically adjust later tasks to remove overlaps. Continue?",
+          );
+          if (shouldContinue) {
+            return resolvedStart;
+          }
+        } else {
+          await _showScheduleMessageDialog(
+            title: 'Schedule conflict',
+            message:
+                "This task overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). Choose a different time.",
+          );
+        }
+
         nextInitial = conflictEnd;
         continue;
       }

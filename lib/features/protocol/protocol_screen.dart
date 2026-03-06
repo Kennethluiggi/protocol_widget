@@ -1261,104 +1261,90 @@ Future<void> _initialize() async {
       if (conflict != null) {
         final conflictStart = conflict.plannedStartMin!;
         final conflictEnd = conflict.plannedEndMin!;
-        final conflictIndex = tasks.indexWhere((t) => t.id == conflict.id);
 
-        bool canContinue = false;
-        if (excludedTaskId != null) {
-          if (editedIndex != null && editedIndex >= 0 && conflictIndex >= 0) {
-            canContinue = conflictIndex > editedIndex;
-          }
+        final shouldContinue = await _showScheduleConfirmDialog(
+          title: 'Schedule conflict',
+          message:
+              "This overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). If you continue, tasks below will be shifted automatically to remove overlaps. Would you like to continue?",
+        );
+
+        if (shouldContinue) {
+          return resolvedStart;
         } else {
-          canContinue = conflictStart > resolvedStart;
+          return null;
         }
-
-        if (canContinue) {
-          final shouldContinue = await _showScheduleConfirmDialog(
-            title: 'Schedule conflict',
-            message:
-                "This overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). If you continue, the app will automatically adjust later tasks to remove overlaps. Continue?",
-          );
-          if (shouldContinue) {
-            return resolvedStart;
-          }
-        } else {
-          await _showScheduleMessageDialog(
-            title: 'Schedule conflict',
-            message:
-                "This task overlaps with '${conflict.title}' (${_formatClock(context, conflictStart)}–${_formatClock(context, conflictEnd)}). Choose a different time.",
-          );
-        }
-
-        nextInitial = conflictEnd;
-        continue;
       }
 
       return resolvedStart;
     }
   }
 
-Future<void> _sortTasksByStartTime(List<Task> tasks) async {
-  final ritualTasks = <Task>[];
-  final nonRitualTasks = <Task>[];
+  Future<void> _sortTasksByStartTime(List<Task> tasks) async {
+    final ritualTasks = <Task>[];
+    final nonRitualTasks = <Task>[];
 
-  for (final task in tasks) {
-    if (_ritualOrder(task.title) != null) {
-      ritualTasks.add(task);
-    } else {
-      nonRitualTasks.add(task);
+    for (final task in tasks) {
+      if (_ritualOrder(task.title) != null) {
+        ritualTasks.add(task);
+      } else {
+        nonRitualTasks.add(task);
+      }
     }
-  }
 
-  ritualTasks.sort((a, b) {
-    return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
-  });
+    ritualTasks.sort((a, b) {
+      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
+    });
 
-  int? timelineStartForSort(Task task) {
-    final start = task.plannedStartMin;
-    final end = task.plannedEndMin;
-    if (start == null || end == null) return null;
+    int? timelineStartForSort(Task task) {
+      final start = task.plannedStartMin;
+      final end = task.plannedEndMin;
+      if (start == null || end == null) return null;
 
-    final isLockedTask = _isMandatoryTask(task);
+      final isLockedTask = _isMandatoryTask(task);
 
-    final startOffset = _effectiveDayOffset(
-      isLockedTask: isLockedTask,
-      minutes: start,
-    );
+      final startOffset = _effectiveDayOffset(
+        isLockedTask: isLockedTask,
+        minutes: start,
+      );
 
-    // For sorting, treat early-morning non-locked tasks as "next day"
-    // by shifting their start forward by +1440.
-    final startTimeline = start + (startOffset * 1440);
+      final startTimeline = start + (startOffset * 1440);
+      return startTimeline;
+    }
 
-    return startTimeline;
-  }
+    nonRitualTasks.sort((a, b) {
+      final aStartTimeline = timelineStartForSort(a);
+      final bStartTimeline = timelineStartForSort(b);
 
-  nonRitualTasks.sort((a, b) {
-    final aStartTimeline = timelineStartForSort(a);
-    final bStartTimeline = timelineStartForSort(b);
+      if (aStartTimeline == null && bStartTimeline == null) {
+        return a.orderIndex.compareTo(b.orderIndex);
+      }
+      if (aStartTimeline == null) return 1;
+      if (bStartTimeline == null) return -1;
 
-    // Untimed tasks stay in place relative to each other, and sort after timed tasks.
-    if (aStartTimeline == null && bStartTimeline == null) {
+      final byStart = aStartTimeline.compareTo(bStartTimeline);
+      if (byStart != 0) return byStart;
+
       return a.orderIndex.compareTo(b.orderIndex);
+    });
+
+    final combined = <Task>[...ritualTasks, ...nonRitualTasks];
+
+    for (var i = 0; i < combined.length; i++) {
+      combined[i].orderIndex = i;
     }
-    if (aStartTimeline == null) return 1;
-    if (bStartTimeline == null) return -1;
 
-    final byStart = aStartTimeline.compareTo(bStartTimeline);
-    if (byStart != 0) return byStart;
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.putAll(combined);
+    });
 
-    return a.orderIndex.compareTo(b.orderIndex);
-  });
-
-  final combined = <Task>[...ritualTasks, ...nonRitualTasks];
-  for (var i = 0; i < combined.length; i++) {
-    combined[i].orderIndex = i;
+    // IMPORTANT:
+    // Keep the in-memory list in the same order we just persisted,
+    // so any follow-up logic (like cascade) uses the correct order.
+    tasks
+      ..clear()
+      ..addAll(combined);
   }
-
-  final isar = await IsarDb.instance();
-  await isar.writeTxn(() async {
-    await isar.tasks.putAll(combined);
-  });
-}
 
   Future<void> _cascadeOverlapsFromIndex(List<Task> tasks, int editedIndex) async {
     if (editedIndex < 0 || editedIndex >= tasks.length) return;
@@ -1485,10 +1471,20 @@ Future<void> _sortTasksByStartTime(List<Task> tasks) async {
     selected.plannedEndMin = selected.targetMin == null
         ? null
         : newStart + selected.targetMin!;
-    final editedIndex = tasks.indexWhere((t) => t.id == selected.id);
-    await _cascadeOverlapsFromIndex(tasks, editedIndex);
-    await _sortTasksByStartTime(tasks);
-    setState(() {});
+
+    await _saveTask(selected);
+
+    final updatedTasks = await _loadPlanTasks();
+    await _sortTasksByStartTime(updatedTasks);
+
+    final editedIndex = updatedTasks.indexWhere((t) => t.id == selected.id);
+    if (editedIndex >= 0) {
+      await _cascadeOverlapsFromIndex(updatedTasks, editedIndex);
+    }
+
+    await _sortTasksByStartTime(updatedTasks);
+
+    if (mounted) setState(() {});
   }
 
   Future<void> _editGoal(Task task) async {

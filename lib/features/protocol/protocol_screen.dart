@@ -562,18 +562,19 @@ Future<void> _initialize() async {
 
   BoxConstraints _normalWindowBounds() {
     final screen = _displayLogicalSize();
-    final maxWidth = (_normalMaxWidth)
-        .clamp(
-          _normalMinWidth,
-          (screen.width - _windowScreenMargin).clamp(
-            _normalMinWidth,
-            _normalMaxWidth,
-          ),
-        )
-        .toDouble();
-    final maxHeight = (screen.height - _windowScreenMargin)
-        .clamp(_normalMinHeight, screen.height)
-        .toDouble();
+    final availableWidth =
+        (screen.width - _windowScreenMargin).clamp(_normalMinWidth, double.infinity).toDouble();
+    final availableHeight =
+        (screen.height - _windowScreenMargin).clamp(_normalMinHeight, double.infinity).toDouble();
+    if (screen.width < _normalMinWidth || screen.height < _normalMinHeight) {
+      DebugLog.window(
+        '[WindowDebug][_normalWindowBounds] normalized small screen '
+        '(${screen.width}x${screen.height})',
+      );
+    }
+
+    final maxWidth = _normalMaxWidth.clamp(_normalMinWidth, availableWidth).toDouble();
+    final maxHeight = availableHeight;
     return BoxConstraints(
       minWidth: _normalMinWidth,
       minHeight: _normalMinHeight,
@@ -584,24 +585,21 @@ Future<void> _initialize() async {
 
   BoxConstraints _widgetWindowBounds() {
     final screen = _displayLogicalSize();
-    final maxWidth = (_widgetMaxWidth)
-        .clamp(
-          _widgetModeMinWidth,
-          (screen.width - _windowScreenMargin).clamp(
-            _widgetModeMinWidth,
-            _widgetMaxWidth,
-          ),
-        )
+    final availableWidth = (screen.width - _windowScreenMargin)
+        .clamp(_widgetModeMinWidth, double.infinity)
         .toDouble();
-    final maxHeight = (_widgetMaxHeight)
-        .clamp(
-          _widgetModeMinHeight,
-          (screen.height - _windowScreenMargin).clamp(
-            _widgetModeMinHeight,
-            _widgetMaxHeight,
-          ),
-        )
+    final availableHeight = (screen.height - _windowScreenMargin)
+        .clamp(_widgetModeMinHeight, double.infinity)
         .toDouble();
+    if (screen.width < _widgetModeMinWidth || screen.height < _widgetModeMinHeight) {
+      DebugLog.window(
+        '[WindowDebug][_widgetWindowBounds] normalized small screen '
+        '(${screen.width}x${screen.height})',
+      );
+    }
+
+    final maxWidth = _widgetMaxWidth.clamp(_widgetModeMinWidth, availableWidth).toDouble();
+    final maxHeight = _widgetMaxHeight.clamp(_widgetModeMinHeight, availableHeight).toDouble();
     return BoxConstraints(
       minWidth: _widgetModeMinWidth,
       minHeight: _widgetModeMinHeight,

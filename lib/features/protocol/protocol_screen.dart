@@ -93,6 +93,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   bool _centeredWidgetOnce = false;
   Size? _fullModeWindowSize;
   Size? _widgetModeSize;
+  Size? _lastKnownFullModeLogicalSize;
   int? _lastNormalSizedTaskCount;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
@@ -529,7 +530,11 @@ Future<void> _initialize() async {
         dpr.isFinite &&
         physicalSize.width > 0 &&
         physicalSize.height > 0) {
-      return Size(physicalSize.width / dpr, physicalSize.height / dpr);
+      final logical = Size(physicalSize.width / dpr, physicalSize.height / dpr);
+      if (logical.width >= _normalMinWidth && logical.height >= _normalMinHeight) {
+        _lastKnownFullModeLogicalSize = logical;
+      }
+      return logical;
     }
 
     DebugLog.window(
@@ -544,35 +549,49 @@ Future<void> _initialize() async {
           displayDpr.isFinite &&
           displaySize.width > 0 &&
           displaySize.height > 0) {
-        return Size(
+        final logical = Size(
           displaySize.width / displayDpr,
           displaySize.height / displayDpr,
         );
+        if (logical.width >= _normalMinWidth && logical.height >= _normalMinHeight) {
+          _lastKnownFullModeLogicalSize = logical;
+        }
+        return logical;
       }
       DebugLog.window(
         '[WindowDebug][_displayLogicalSize] fallback: invalid display '
         '(${displaySize.width}x${displaySize.height}, dpr=$displayDpr)',
       );
     } catch (e) {
-      DebugLog.window('[WindowDebug][_displayLogicalSize] fallback: display unavailable ($e)');
+      DebugLog.window(
+        '[WindowDebug][_displayLogicalSize] fallback: display unavailable ($e)',
+      );
     }
 
     return fallback;
   }
 
   BoxConstraints _normalWindowBounds() {
+    const fallback = Size(1280, 800);
     final screen = _displayLogicalSize();
-    final availableWidth =
-        (screen.width - _windowScreenMargin).clamp(_normalMinWidth, double.infinity).toDouble();
-    final availableHeight =
-        (screen.height - _windowScreenMargin).clamp(_normalMinHeight, double.infinity).toDouble();
-    if (screen.width < _normalMinWidth || screen.height < _normalMinHeight) {
+    final isSmallForNormal =
+        screen.width < _normalMinWidth || screen.height < _normalMinHeight;
+    final effectiveScreen =
+        isSmallForNormal ? (_lastKnownFullModeLogicalSize ?? fallback) : screen;
+    if (isSmallForNormal) {
       DebugLog.window(
-        '[WindowDebug][_normalWindowBounds] normalized small screen '
+        '[WindowDebug][_normalWindowBounds] using cached full-mode logical size '
+        '(${effectiveScreen.width}x${effectiveScreen.height}) for small current '
         '(${screen.width}x${screen.height})',
       );
     }
 
+    final availableWidth = (effectiveScreen.width - _windowScreenMargin)
+        .clamp(_normalMinWidth, double.infinity)
+        .toDouble();
+    final availableHeight = (effectiveScreen.height - _windowScreenMargin)
+        .clamp(_normalMinHeight, double.infinity)
+        .toDouble();
     final maxWidth = _normalMaxWidth.clamp(_normalMinWidth, availableWidth).toDouble();
     final maxHeight = availableHeight;
     return BoxConstraints(

@@ -515,28 +515,66 @@ Future<void> _initialize() async {
   }
 
   Size _displayLogicalSize() {
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    final display = view.display;
-    return Size(
-      display.size.width / display.devicePixelRatio,
-      display.size.height / display.devicePixelRatio,
+    const fallback = Size(1280, 800);
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) {
+      DebugLog.window('[WindowDebug][_displayLogicalSize] fallback: no views');
+      return fallback;
+    }
+
+    final view = views.first;
+    final dpr = view.devicePixelRatio;
+    final physicalSize = view.physicalSize;
+    if (dpr > 0 &&
+        dpr.isFinite &&
+        physicalSize.width > 0 &&
+        physicalSize.height > 0) {
+      return Size(physicalSize.width / dpr, physicalSize.height / dpr);
+    }
+
+    DebugLog.window(
+      '[WindowDebug][_displayLogicalSize] invalid physicalSize/dpr '
+      '(${physicalSize.width}x${physicalSize.height}, dpr=$dpr), trying display',
     );
+    try {
+      final display = view.display;
+      final displayDpr = display.devicePixelRatio;
+      final displaySize = display.size;
+      if (displayDpr > 0 &&
+          displayDpr.isFinite &&
+          displaySize.width > 0 &&
+          displaySize.height > 0) {
+        return Size(
+          displaySize.width / displayDpr,
+          displaySize.height / displayDpr,
+        );
+      }
+      DebugLog.window(
+        '[WindowDebug][_displayLogicalSize] fallback: invalid display '
+        '(${displaySize.width}x${displaySize.height}, dpr=$displayDpr)',
+      );
+    } catch (e) {
+      DebugLog.window('[WindowDebug][_displayLogicalSize] fallback: display unavailable ($e)');
+    }
+
+    return fallback;
   }
 
   BoxConstraints _normalWindowBounds() {
     final screen = _displayLogicalSize();
-    final maxWidth = (_normalMaxWidth)
-        .clamp(
-          _normalMinWidth,
-          (screen.width - _windowScreenMargin).clamp(
-            _normalMinWidth,
-            _normalMaxWidth,
-          ),
-        )
-        .toDouble();
-    final maxHeight = (screen.height - _windowScreenMargin)
-        .clamp(_normalMinHeight, screen.height)
-        .toDouble();
+    final availableWidth =
+        (screen.width - _windowScreenMargin).clamp(_normalMinWidth, double.infinity).toDouble();
+    final availableHeight =
+        (screen.height - _windowScreenMargin).clamp(_normalMinHeight, double.infinity).toDouble();
+    if (screen.width < _normalMinWidth || screen.height < _normalMinHeight) {
+      DebugLog.window(
+        '[WindowDebug][_normalWindowBounds] normalized small screen '
+        '(${screen.width}x${screen.height})',
+      );
+    }
+
+    final maxWidth = _normalMaxWidth.clamp(_normalMinWidth, availableWidth).toDouble();
+    final maxHeight = availableHeight;
     return BoxConstraints(
       minWidth: _normalMinWidth,
       minHeight: _normalMinHeight,
@@ -547,24 +585,21 @@ Future<void> _initialize() async {
 
   BoxConstraints _widgetWindowBounds() {
     final screen = _displayLogicalSize();
-    final maxWidth = (_widgetMaxWidth)
-        .clamp(
-          _widgetModeMinWidth,
-          (screen.width - _windowScreenMargin).clamp(
-            _widgetModeMinWidth,
-            _widgetMaxWidth,
-          ),
-        )
+    final availableWidth = (screen.width - _windowScreenMargin)
+        .clamp(_widgetModeMinWidth, double.infinity)
         .toDouble();
-    final maxHeight = (_widgetMaxHeight)
-        .clamp(
-          _widgetModeMinHeight,
-          (screen.height - _windowScreenMargin).clamp(
-            _widgetModeMinHeight,
-            _widgetMaxHeight,
-          ),
-        )
+    final availableHeight = (screen.height - _windowScreenMargin)
+        .clamp(_widgetModeMinHeight, double.infinity)
         .toDouble();
+    if (screen.width < _widgetModeMinWidth || screen.height < _widgetModeMinHeight) {
+      DebugLog.window(
+        '[WindowDebug][_widgetWindowBounds] normalized small screen '
+        '(${screen.width}x${screen.height})',
+      );
+    }
+
+    final maxWidth = _widgetMaxWidth.clamp(_widgetModeMinWidth, availableWidth).toDouble();
+    final maxHeight = _widgetMaxHeight.clamp(_widgetModeMinHeight, availableHeight).toDouble();
     return BoxConstraints(
       minWidth: _widgetModeMinWidth,
       minHeight: _widgetModeMinHeight,

@@ -515,12 +515,49 @@ Future<void> _initialize() async {
   }
 
   Size _displayLogicalSize() {
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    final display = view.display;
-    return Size(
-      display.size.width / display.devicePixelRatio,
-      display.size.height / display.devicePixelRatio,
+    const fallback = Size(1280, 800);
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) {
+      DebugLog.window('[WindowDebug][_displayLogicalSize] fallback: no views');
+      return fallback;
+    }
+
+    final view = views.first;
+    final dpr = view.devicePixelRatio;
+    final physicalSize = view.physicalSize;
+    if (dpr > 0 &&
+        dpr.isFinite &&
+        physicalSize.width > 0 &&
+        physicalSize.height > 0) {
+      return Size(physicalSize.width / dpr, physicalSize.height / dpr);
+    }
+
+    DebugLog.window(
+      '[WindowDebug][_displayLogicalSize] invalid physicalSize/dpr '
+      '(${physicalSize.width}x${physicalSize.height}, dpr=$dpr), trying display',
     );
+    try {
+      final display = view.display;
+      final displayDpr = display.devicePixelRatio;
+      final displaySize = display.size;
+      if (displayDpr > 0 &&
+          displayDpr.isFinite &&
+          displaySize.width > 0 &&
+          displaySize.height > 0) {
+        return Size(
+          displaySize.width / displayDpr,
+          displaySize.height / displayDpr,
+        );
+      }
+      DebugLog.window(
+        '[WindowDebug][_displayLogicalSize] fallback: invalid display '
+        '(${displaySize.width}x${displaySize.height}, dpr=$displayDpr)',
+      );
+    } catch (e) {
+      DebugLog.window('[WindowDebug][_displayLogicalSize] fallback: display unavailable ($e)');
+    }
+
+    return fallback;
   }
 
   BoxConstraints _normalWindowBounds() {

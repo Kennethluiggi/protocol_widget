@@ -593,12 +593,13 @@ Future<void> _initialize() async {
         .clamp(_normalMinHeight, double.infinity)
         .toDouble();
     final maxWidth = _normalMaxWidth.clamp(_normalMinWidth, availableWidth).toDouble();
-    final maxHeight = availableHeight;
+    final permissiveMaxHeight =
+        availableHeight < (_normalMinHeight + 240) ? (_normalMinHeight + 600) : availableHeight;
     return BoxConstraints(
       minWidth: _normalMinWidth,
       minHeight: _normalMinHeight,
       maxWidth: maxWidth,
-      maxHeight: maxHeight,
+      maxHeight: permissiveMaxHeight,
     );
   }
 
@@ -635,12 +636,14 @@ Future<void> _initialize() async {
 
   Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
     if (!_isDesktopPlatform() || _widgetMode) return;
-    if (_lastNormalSizedTaskCount == taskCount) return;
+    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) return;
 
     _lastNormalSizedTaskCount = taskCount;
     final bounds = _normalWindowBounds();
     await windowManager.setMinimumSize(Size(bounds.minWidth, bounds.minHeight));
     await windowManager.setMaximumSize(Size(bounds.maxWidth, bounds.maxHeight));
+
+    if (_appliedInitialNormalBounds) return;
 
     final current = await windowManager.getSize();
     final targetHeight = _recommendedNormalHeight(taskCount);
@@ -649,6 +652,7 @@ Future<void> _initialize() async {
         .toDouble();
     final next = Size(targetWidth, targetHeight);
     await windowManager.setSize(next);
+    _appliedInitialNormalBounds = true;
   }
 
   Future<void> _applyWidgetModeWindowState(bool enabled) async {

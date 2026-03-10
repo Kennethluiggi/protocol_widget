@@ -88,13 +88,19 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   bool _alwaysOnTop = false;
   bool _widgetMode = false;
   bool _isExitingWidgetMode = false;
+  
+
 
   // Guard flags to avoid repeated window ops.
   bool _appliedInitialNormalBounds = false;
   bool _centeredWidgetOnce = false;
+  bool _didInitialTaskAwareSizing = false;
+  bool _startupSizingQueued = false;
   Size? _fullModeWindowSize;
   Size? _widgetModeSize;
   Size? _lastKnownFullModeLogicalSize;
+  Size? _lastAppliedWidgetResizeTarget;
+  bool _isResizingWidget = false;
   int? _lastNormalSizedTaskCount;
   bool _deleteMode = false;
   int _planId = _todayPlanId();
@@ -606,30 +612,38 @@ Future<void> _initialize() async {
     );
   }
 
-  BoxConstraints _widgetWindowBounds() {
-    final screen = _displayLogicalSize();
-    final availableWidth = (screen.width - _windowScreenMargin)
-        .clamp(_widgetModeMinWidth, double.infinity)
-        .toDouble();
-    final availableHeight = (screen.height - _windowScreenMargin)
-        .clamp(_widgetModeMinHeight, double.infinity)
-        .toDouble();
-    if (screen.width < _widgetModeMinWidth || screen.height < _widgetModeMinHeight) {
-      DebugLog.window(
-        '[WindowDebug][_widgetWindowBounds] normalized small screen '
-        '(${screen.width}x${screen.height})',
-      );
-    }
+BoxConstraints _widgetWindowBounds() {
+  const fallback = Size(1920, 1080);
 
-    final maxWidth = _widgetMaxWidth.clamp(_widgetModeMinWidth, availableWidth).toDouble();
-    final maxHeight = _widgetMaxHeight.clamp(_widgetModeMinHeight, availableHeight).toDouble();
-    return BoxConstraints(
-      minWidth: _widgetModeMinWidth,
-      minHeight: _widgetModeMinHeight,
-      maxWidth: maxWidth,
-      maxHeight: maxHeight,
-    );
-  }
+  final effectiveScreen = _lastKnownFullModeLogicalSize ?? fallback;
+
+  final availableWidth = (effectiveScreen.width - _windowScreenMargin)
+      .clamp(_widgetModeMinWidth, double.infinity)
+      .toDouble();
+
+  final availableHeight = (effectiveScreen.height - _windowScreenMargin)
+      .clamp(_widgetModeMinHeight, double.infinity)
+      .toDouble();
+
+  final maxWidth =
+      _widgetMaxWidth.clamp(_widgetModeMinWidth, availableWidth).toDouble();
+  final maxHeight =
+      _widgetMaxHeight.clamp(_widgetModeMinHeight, availableHeight).toDouble();
+
+  DebugLog.window(
+    '[WindowDebug][_widgetWindowBounds] stable full-mode reference '
+    '(${effectiveScreen.width}x${effectiveScreen.height}) '
+    'min=($_widgetModeMinWidth,$_widgetModeMinHeight) '
+    'max=($maxWidth,$maxHeight)',
+  );
+
+  return BoxConstraints(
+    minWidth: _widgetModeMinWidth,
+    minHeight: _widgetModeMinHeight,
+    maxWidth: maxWidth,
+    maxHeight: maxHeight,
+  );
+}
 
   double _recommendedNormalHeight(int taskCount) {
     final bounds = _normalWindowBounds();
@@ -646,16 +660,32 @@ Future<void> _initialize() async {
 
   Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
     if (!_isDesktopPlatform() || _widgetMode) return;
-    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) {
+
+    DebugLog.window(
+      '[StartupSizing] enter taskCount=$taskCount '
+      'widgetMode=$_widgetMode '
+      'didInitial=$_didInitialTaskAwareSizing '
+      'lastNormalSizedTaskCount=$_lastNormalSizedTaskCount',
+    );
+
+    if (_lastNormalSizedTaskCount == taskCount && _didInitialTaskAwareSizing) {
+      DebugLog.window(
+        '[StartupSizing] EARLY RETURN because taskCount unchanged and startup sizing already completed',
+      );
       return;
     }
 
     _lastNormalSizedTaskCount = taskCount;
+
     final bounds = _normalWindowBounds();
+    DebugLog.window(
+      '[StartupSizing] bounds '
+      'min=(${bounds.minWidth},${bounds.minHeight}) '
+      'max=(${bounds.maxWidth},${bounds.maxHeight})',
+    );
+
     await windowManager.setMinimumSize(Size(bounds.minWidth, bounds.minHeight));
     await windowManager.setMaximumSize(Size(bounds.maxWidth, bounds.maxHeight));
-
-    if (_appliedInitialNormalBounds) return;
 
     final current = await windowManager.getSize();
     final targetHeight = _recommendedNormalHeight(taskCount);
@@ -665,32 +695,73 @@ Future<void> _initialize() async {
             : comfortableTableWidth)
         .clamp(bounds.minWidth, bounds.maxWidth)
         .toDouble();
+
+    DebugLog.window(
+      '[StartupSizing] initial target width=$targetWidth height=$targetHeight',
+    );
+
     await windowManager.setSize(Size(targetWidth, targetHeight));
 
-    final overflowReady = Completer<void>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!overflowReady.isCompleted) overflowReady.complete();
-    });
-    await overflowReady.future;
+    final afterInitialSize = await windowManager.getSize();
+    DebugLog.window(
+      '[StartupSizing] after initial setSize actual=${afterInitialSize.width}x${afterInitialSize.height}',
+    );
+
+    await WidgetsBinding.instance.endOfFrame;
+    await Future.delayed(const Duration(milliseconds: 16));
+
+    DebugLog.window(
+      '[StartupSizing] post-layout check '
+      'hasClients=${_normalTaskListScrollController.hasClients}',
+    );
 
     if (_normalTaskListScrollController.hasClients) {
-      final overflow =
-          _normalTaskListScrollController.position.maxScrollExtent;
+      final position = _normalTaskListScrollController.position;
+      final overflow = position.maxScrollExtent;
+
+      DebugLog.window(
+        '[StartupSizing] scroll metrics '
+        'maxScrollExtent=${position.maxScrollExtent} '
+        'viewport=${position.viewportDimension} '
+        'pixels=${position.pixels}',
+      );
+
       if (overflow > 0) {
         final sized = await windowManager.getSize();
         const overflowBuffer = 12.0;
-        final expandedHeight =
-            (sized.height + overflow + overflowBuffer)
-                .clamp(bounds.minHeight, bounds.maxHeight)
-                .toDouble();
+        final expandedHeight = (sized.height + overflow + overflowBuffer)
+            .clamp(bounds.minHeight, bounds.maxHeight)
+            .toDouble();
+
+        DebugLog.window(
+          '[StartupSizing] overflow detected '
+          'currentHeight=${sized.height} '
+          'overflow=$overflow '
+          'expandedHeight=$expandedHeight',
+        );
+
         if (expandedHeight > sized.height) {
           await windowManager.setSize(Size(sized.width, expandedHeight));
+
+          final afterOverflowSize = await windowManager.getSize();
+          DebugLog.window(
+            '[StartupSizing] after overflow setSize '
+            '${afterOverflowSize.width}x${afterOverflowSize.height}',
+          );
         }
+      } else {
+        DebugLog.window('[StartupSizing] no overflow detected');
       }
+    } else {
+      DebugLog.window('[StartupSizing] no scroll clients attached yet');
     }
 
-    _appliedInitialNormalBounds = true;
+    _didInitialTaskAwareSizing = true;
+    DebugLog.window('[StartupSizing] marking _didInitialTaskAwareSizing=true');
   }
+
+    
+    
 
   Future<void> _applyWidgetModeWindowState(bool enabled) async {
     DebugLog.widgetMode('HIT _applyWidgetModeWindowState enabled=$enabled');
@@ -807,6 +878,10 @@ Future<void> _initialize() async {
     DebugLog.window('NORMAL enabled=false after setMinimumSize/setMaximumSize/setResizable(true)');
 
     if (!_appliedInitialNormalBounds) {
+      DebugLog.window(
+        '[StartupSizing] _applyWidgetModeWindowState(false) '
+        'marking _appliedInitialNormalBounds=true',
+      );
       _appliedInitialNormalBounds = true;
     }
   }
@@ -848,21 +923,61 @@ Future<void> _initialize() async {
     }
   }
 
-  Future<void> _resizeWidgetMode(DragUpdateDetails details) async {
-    if (!_widgetMode || !_isDesktopPlatform()) return;
-    final bounds = _widgetWindowBounds();
-    final current = _widgetModeSize ?? await windowManager.getSize();
-    final next = Size(
-      (current.width + details.delta.dx)
-          .clamp(bounds.minWidth, bounds.maxWidth)
-          .toDouble(),
-      (current.height + details.delta.dy)
-          .clamp(bounds.minHeight, bounds.maxHeight)
-          .toDouble(),
-    );
-    _widgetModeSize = next;
-    await windowManager.setSize(next);
-  }
+    Future<void> _resizeWidgetMode(DragUpdateDetails details) async {
+      if (!_widgetMode || _isResizingWidget) return;
+
+      final dx = details.delta.dx;
+      final dy = details.delta.dy;
+
+      // Ignore pure no-op drag updates.
+      if (dx == 0 && dy == 0) {
+        return;
+      }
+
+      _isResizingWidget = true;
+
+      try {
+        final current = await windowManager.getSize();
+        final bounds = _widgetWindowBounds();
+
+        final rawNextWidth = current.width + dx;
+        final rawNextHeight = current.height + dy;
+
+        final nextWidth = rawNextWidth
+            .clamp(bounds.minWidth, bounds.maxWidth)
+            .toDouble();
+        final nextHeight = rawNextHeight
+            .clamp(bounds.minHeight, bounds.maxHeight)
+            .toDouble();
+
+        // Ignore effectively unchanged sizes after clamping.
+        if ((nextWidth - current.width).abs() < 1 &&
+            (nextHeight - current.height).abs() < 1) {
+          return;
+        }
+
+        final next = Size(nextWidth, nextHeight);
+
+        // Ignore duplicate targets to reduce resize spam.
+        final last = _lastAppliedWidgetResizeTarget;
+        if (last != null &&
+            (last.width - next.width).abs() < 1 &&
+            (last.height - next.height).abs() < 1) {
+          return;
+        }
+
+        DebugLog.window(
+          '[WidgetResize] resize current=${current.width}x${current.height} '
+          'next=${next.width}x${next.height} delta=($dx, $dy)',
+        );
+
+        _lastAppliedWidgetResizeTarget = next;
+        await windowManager.setSize(next);
+        _widgetModeSize = next;
+      } finally {
+        _isResizingWidget = false;
+      }
+    }
 
     Future<List<Task>> _loadPlanTasks() async {
     //final localTodayPlanId = _todayPlanId();
@@ -887,8 +1002,6 @@ Future<void> _initialize() async {
         .planIdEqualTo(_planId)
         .sortByOrderIndex()
         .findAll();
-
-    await _applyNormalWindowSizingForTasks(tasks.length);
     return tasks;
   }
 
@@ -2140,6 +2253,8 @@ Future<void> _initialize() async {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onPanStart: (_) async {
+                      _lastAppliedWidgetResizeTarget = null;
+                      DebugLog.window('[WidgetResize] handle pan start');
                       if (_isDesktopPlatform()) {
                         // IMPORTANT: startDragging takes NO arguments.
                         await windowManager.startDragging();
@@ -2234,8 +2349,20 @@ Future<void> _initialize() async {
               if (!tasksSnapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final tasks = tasksSnapshot.data!;
+                            final tasks = tasksSnapshot.data!;
+              DebugLog.window('[StartupSizing] build received tasks count=${tasks.length}');
 
+              if (!_widgetMode &&
+                  !_startupSizingQueued &&
+                  (!_didInitialTaskAwareSizing || _lastNormalSizedTaskCount != tasks.length)) {
+                _startupSizingQueued = true;
+
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  _startupSizingQueued = false;
+                  if (!mounted || _widgetMode) return;
+                  await _applyNormalWindowSizingForTasks(tasks.length);
+                });
+              }
               return ValueListenableBuilder<DateTime>(
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
@@ -2263,14 +2390,18 @@ Future<void> _initialize() async {
                           ),
                           if (_widgetMode)
                             Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.translucent,
-                                onPanStart: (_) {
-                                  if (_isDesktopPlatform()) {
-                                    windowManager.startDragging();
-                                  }
-                                },
-                                child: const SizedBox.expand(),
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 96, bottom: 56),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onPanStart: (_) {
+                                    if (_isDesktopPlatform()) {
+                                      DebugLog.window('[WidgetResize] background drag start');
+                                      windowManager.startDragging();
+                                    }
+                                  },
+                                  child: const SizedBox.expand(),
+                                ),
                               ),
                             ),
                           Padding(
@@ -2397,19 +2528,26 @@ Future<void> _initialize() async {
                                     cursor: SystemMouseCursors.resizeUpLeftDownRight,
                                     child: GestureDetector(
                                       behavior: HitTestBehavior.opaque,
+                                      onPanStart: (_) {
+                                        DebugLog.window('[WidgetResize] handle pan start');
+                                      },
                                       onPanUpdate: (details) async {
+                                        DebugLog.window(
+                                          '[WidgetResize] handle pan update dx=${details.delta.dx} dy=${details.delta.dy}',
+                                        );
                                         await _resizeWidgetMode(details);
                                       },
                                       child: Container(
-                                        width: 18,
-                                        height: 18,
+                                        width: 28,
+                                        height: 28,
+                                        alignment: Alignment.center,
                                         decoration: BoxDecoration(
                                           color: Colors.white.withValues(alpha: 0.22),
-                                          borderRadius: BorderRadius.circular(6),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: const Icon(
                                           Icons.drag_handle,
-                                          size: 14,
+                                          size: 16,
                                           color: Colors.white,
                                         ),
                                       ),

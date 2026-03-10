@@ -646,7 +646,9 @@ Future<void> _initialize() async {
 
   Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
     if (!_isDesktopPlatform() || _widgetMode) return;
-    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) return;
+    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) {
+      return;
+    }
 
     _lastNormalSizedTaskCount = taskCount;
     final bounds = _normalWindowBounds();
@@ -663,8 +665,30 @@ Future<void> _initialize() async {
             : comfortableTableWidth)
         .clamp(bounds.minWidth, bounds.maxWidth)
         .toDouble();
-    final next = Size(targetWidth, targetHeight);
-    await windowManager.setSize(next);
+    await windowManager.setSize(Size(targetWidth, targetHeight));
+
+    final overflowReady = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!overflowReady.isCompleted) overflowReady.complete();
+    });
+    await overflowReady.future;
+
+    if (_normalTaskListScrollController.hasClients) {
+      final overflow =
+          _normalTaskListScrollController.position.maxScrollExtent;
+      if (overflow > 0) {
+        final sized = await windowManager.getSize();
+        const overflowBuffer = 12.0;
+        final expandedHeight =
+            (sized.height + overflow + overflowBuffer)
+                .clamp(bounds.minHeight, bounds.maxHeight)
+                .toDouble();
+        if (expandedHeight > sized.height) {
+          await windowManager.setSize(Size(sized.width, expandedHeight));
+        }
+      }
+    }
+
     _appliedInitialNormalBounds = true;
   }
 

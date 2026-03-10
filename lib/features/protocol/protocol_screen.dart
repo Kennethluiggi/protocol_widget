@@ -70,7 +70,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   static const double _normalMinHeight = 640;
   static const double _normalMaxWidth = 2200;
   static const double _windowScreenMargin = 40;
-  static const double _normalBaseHeight = 470;
+  static const double _normalBaseHeight = 530;
   static const double _normalTaskRowHeight = 48;
   static const double _widgetDefaultHeight = 300;
   static const double _widgetDefaultWidth = 860;

@@ -86,8 +86,9 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   late final Timer _currentWindowRefreshTimer;
 
   bool _alwaysOnTop = false;
-  bool _widgetMode = false;
-  bool _isExitingWidgetMode = false;
+  bool _widgetMode = false; // requested mode / switch state
+  bool _renderWidgetMode = false; // actual rendered layout
+  bool _isTransitioningWidgetMode = false;
   
 
 
@@ -267,10 +268,11 @@ Future<void> _initialize() async {
   Future<void> _loadWidgetMode() async {
     final setting = await _getSetting(_widgetModeTitle);
     _widgetMode = setting?.goalChimed ?? false;
+    _renderWidgetMode = _widgetMode;
   }
 
   Future<void> _setWidgetMode(bool value) async {
-    if (value == _widgetMode) return;
+    if (value == _widgetMode || _isTransitioningWidgetMode) return;
 
     // Persist setting first.
     final existing = await _getSetting(_widgetModeTitle);
@@ -282,30 +284,12 @@ Future<void> _initialize() async {
       await isar.tasks.put(row);
     });
 
-    // Exiting widget mode: keep rendering widget UI until window restore is done.
-    if (!value) {
-      if (!mounted) return;
-      setState(() {
-        _isExitingWidgetMode = true;
-      });
-
-      await _applyWidgetModeWindowState(false);
-      if (!mounted) return;
-
-      setState(() {
-        _widgetMode = false;
-        _isExitingWidgetMode = false;
-      });
-      return;
-    }
-
-    // Entering widget mode: flip UI state, then apply widget window state.
     if (!mounted) return;
     setState(() {
-      _widgetMode = true;
+      _widgetMode = value;
     });
 
-    await _applyWidgetModeWindowState(true);
+    await _applyWidgetModeWindowState(value);
   }
 
   Future<void> _setAlwaysOnTop(bool value) async {
@@ -767,122 +751,141 @@ BoxConstraints _widgetWindowBounds() {
     DebugLog.widgetMode('HIT _applyWidgetModeWindowState enabled=$enabled');
     DebugLog.window('ENTER enabled=$enabled (start)');
     if (!_isDesktopPlatform()) return;
+    if (_isTransitioningWidgetMode) return;
 
-    if (enabled) {
-      final widgetBounds = _widgetWindowBounds();
+    _isTransitioningWidgetMode = true;
 
-      _fullModeWindowSize ??= await windowManager.getSize();
+    try {
+      if (enabled) {
+        final widgetBounds = _widgetWindowBounds();
 
-      _widgetModeSize ??= Size(
-        _widgetDefaultWidth.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
-        _widgetDefaultHeight.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
-      );
-      DebugLog.window('WIDGET enabled=true after computing widgetModeSize');
+        _fullModeWindowSize ??= await windowManager.getSize();
 
-      // Apply widget bounds constraints.
-      await windowManager.setMinimumSize(
-        Size(widgetBounds.minWidth, widgetBounds.minHeight),
-      );
-      await windowManager.setMaximumSize(
-        Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
-      );
-      DebugLog.window('WIDGET enabled=true after setMinimumSize/setMaximumSize');
-      // Force Windows to re-apply sizing constraints after mode switches.
-      await windowManager.setResizable(false);
-      await Future.delayed(const Duration(milliseconds: 20));
-      await windowManager.setResizable(true);
-      // Widget mode: truly frameless + no OS resize frame (we resize via our handle).
-      await windowManager.setHasShadow(false);
-      await windowManager.setAsFrameless();
+        _widgetModeSize ??= Size(
+          _widgetDefaultWidth
+              .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
+              .toDouble(),
+          _widgetDefaultHeight
+              .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
+              .toDouble(),
+        );
+        DebugLog.window('WIDGET enabled=true after computing widgetModeSize');
 
-      // IMPORTANT: do NOT call setAsFrameless() here.
-      // It can remove native resize frame styles and may not restore them reliably.
-      await windowManager.setBackgroundColor(Colors.transparent);
-      await windowManager.setResizable(false);
+        final target = Size(
+          _widgetModeSize!.width
+              .clamp(widgetBounds.minWidth, widgetBounds.maxWidth)
+              .toDouble(),
+          _widgetModeSize!.height
+              .clamp(widgetBounds.minHeight, widgetBounds.maxHeight)
+              .toDouble(),
+        );
+        _widgetModeSize = target;
 
-      // Compute final target size ONCE, clamp ONCE, set ONCE.
-      final target = Size(
-        _widgetModeSize!.width.clamp(widgetBounds.minWidth, widgetBounds.maxWidth).toDouble(),
-        _widgetModeSize!.height.clamp(widgetBounds.minHeight, widgetBounds.maxHeight).toDouble(),
-      );
-      _widgetModeSize = target;
+        await windowManager.setResizable(false);
+        await windowManager.setHasShadow(false);
+        await windowManager.setAsFrameless();
+        await windowManager.setBackgroundColor(Colors.transparent);
 
-      await windowManager.setSize(target);
-      DebugLog.window('WIDGET enabled=true after setSize(target)');
+        await windowManager.setMinimumSize(
+          Size(widgetBounds.minWidth, widgetBounds.minHeight),
+        );
+        await windowManager.setMaximumSize(
+          Size(widgetBounds.maxWidth, widgetBounds.maxHeight),
+        );
+        DebugLog.window('WIDGET enabled=true after setMinimumSize/setMaximumSize');
 
-      // Center only the first time we ever enter widget mode to avoid jumpiness.
-      if (!_centeredWidgetOnce) {
-        _centeredWidgetOnce = true;
-        await windowManager.center();
+        await windowManager.setSize(target);
+        DebugLog.window('WIDGET enabled=true after setSize(target)');
+
+        if (!_centeredWidgetOnce) {
+          _centeredWidgetOnce = true;
+          await windowManager.center();
+        }
+
+        if (mounted) {
+          setState(() {
+            _renderWidgetMode = true;
+          });
+        }
+
+        return;
       }
 
-      return;
-    }
-
-    // Exiting widget mode -> restore normal bounds (native titlebar stays hidden;
-    // we use a custom title bar in Flutter permanently).
-    final normalBounds = _normalWindowBounds();
-    DebugLog.window(
-      '[WindowDebug][NORMAL bounds] '
-      'min=(${normalBounds.minWidth},${normalBounds.minHeight}) '
-      'max=(${normalBounds.maxWidth},${normalBounds.maxHeight})'
-    );
-    DebugLog.window('NORMAL enabled=false after computing normalBounds');
-
-    // Compute restore size first (clamped to normal bounds).
-    Size? restoreSize = _fullModeWindowSize;
-
-    DebugLog.window('[WindowDebug][restoreSize before clamp] $restoreSize');
-
-    if (restoreSize != null) {
-      final clamped = Size(
-        restoreSize.width.clamp(normalBounds.minWidth, normalBounds.maxWidth).toDouble(),
-        restoreSize.height.clamp(normalBounds.minHeight, normalBounds.maxHeight).toDouble(),
-      );
-      DebugLog.window('[WindowDebug][restoreSize AFTER clamp] $clamped');
-      restoreSize = clamped;
-    } else {
-      DebugLog.window('[WindowDebug][restoreSize is null]');
-    }
-
-    DebugLog.window('NORMAL enabled=false after restoreSize clamp');
-    DebugLog.window('NORMAL enabled=false after computing restoreSize=$restoreSize');
-
-  // Restore a resizable Windows window style after widget-mode frameless.
-    await windowManager.setTitleBarStyle(
-      TitleBarStyle.hidden,
-      windowButtonVisibility: false,
-    );
-
-    await windowManager.setHasShadow(true);
-
-    final bg = Theme.of(context).scaffoldBackgroundColor;
-    await windowManager.setBackgroundColor(bg);
-    DebugLog.window('NORMAL enabled=false after setBackgroundColor');
-
-    // Set the target normal size BEFORE raising min constraints.
-    if (restoreSize != null) {
-      await windowManager.setSize(restoreSize);
-      DebugLog.window('NORMAL enabled=false after setSize(restoreSize)');
-    }
-
-    // Now apply normal min/max constraints.
-    await windowManager.setMinimumSize(
-      Size(normalBounds.minWidth, normalBounds.minHeight),
-    );
-    await windowManager.setMaximumSize(
-      Size(normalBounds.maxWidth, normalBounds.maxHeight),
-    );
-    await windowManager.setResizable(true);
-    DebugLog.window('NORMAL enabled=false AFTER min/max/resizable');
-    DebugLog.window('NORMAL enabled=false after setMinimumSize/setMaximumSize/setResizable(true)');
-
-    if (!_appliedInitialNormalBounds) {
+      final normalBounds = _normalWindowBounds();
       DebugLog.window(
-        '[StartupSizing] _applyWidgetModeWindowState(false) '
-        'marking _appliedInitialNormalBounds=true',
+        '[WindowDebug][NORMAL bounds] '
+        'min=(${normalBounds.minWidth},${normalBounds.minHeight}) '
+        'max=(${normalBounds.maxWidth},${normalBounds.maxHeight})',
       );
-      _appliedInitialNormalBounds = true;
+      DebugLog.window('NORMAL enabled=false after computing normalBounds');
+
+      Size? restoreSize = _fullModeWindowSize;
+      DebugLog.window('[WindowDebug][restoreSize before clamp] $restoreSize');
+
+      if (restoreSize != null) {
+        final clamped = Size(
+          restoreSize.width
+              .clamp(normalBounds.minWidth, normalBounds.maxWidth)
+              .toDouble(),
+          restoreSize.height
+              .clamp(normalBounds.minHeight, normalBounds.maxHeight)
+              .toDouble(),
+        );
+        DebugLog.window('[WindowDebug][restoreSize AFTER clamp] $clamped');
+        restoreSize = clamped;
+      } else {
+        DebugLog.window('[WindowDebug][restoreSize is null]');
+      }
+
+      DebugLog.window('NORMAL enabled=false after restoreSize clamp');
+      DebugLog.window(
+        'NORMAL enabled=false after computing restoreSize=$restoreSize',
+      );
+
+      await windowManager.setResizable(false);
+
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
+      );
+      await windowManager.setHasShadow(true);
+
+      final bg = Theme.of(context).scaffoldBackgroundColor;
+      await windowManager.setBackgroundColor(bg);
+      DebugLog.window('NORMAL enabled=false after setBackgroundColor');
+
+      if (restoreSize != null) {
+        await windowManager.setSize(restoreSize);
+        DebugLog.window('NORMAL enabled=false after setSize(restoreSize)');
+      }
+
+      await windowManager.setMinimumSize(
+        Size(normalBounds.minWidth, normalBounds.minHeight),
+      );
+      await windowManager.setMaximumSize(
+        Size(normalBounds.maxWidth, normalBounds.maxHeight),
+      );
+      await windowManager.setResizable(true);
+      DebugLog.window('NORMAL enabled=false AFTER min/max/resizable');
+      DebugLog.window(
+        'NORMAL enabled=false after setMinimumSize/setMaximumSize/setResizable(true)',
+      );
+
+      if (mounted) {
+        setState(() {
+          _renderWidgetMode = false;
+        });
+      }
+
+      if (!_appliedInitialNormalBounds) {
+        DebugLog.window(
+          '[StartupSizing] _applyWidgetModeWindowState(false) '
+          'marking _appliedInitialNormalBounds=true',
+        );
+        _appliedInitialNormalBounds = true;
+      }
+    } finally {
+      _isTransitioningWidgetMode = false;
     }
   }
 
@@ -924,7 +927,9 @@ BoxConstraints _widgetWindowBounds() {
   }
 
     Future<void> _resizeWidgetMode(DragUpdateDetails details) async {
-      if (!_widgetMode || _isResizingWidget) return;
+      if (!_renderWidgetMode || _isResizingWidget || _isTransitioningWidgetMode) {
+        return;
+      }
 
       final dx = details.delta.dx;
       final dy = details.delta.dy;
@@ -2341,8 +2346,8 @@ BoxConstraints _widgetWindowBounds() {
         }
 
         return Scaffold(
-          backgroundColor: _widgetMode ? Colors.transparent : null,
-          appBar: _widgetMode ? null : _buildCustomTitleBar(),
+          backgroundColor: _renderWidgetMode ? Colors.transparent : null,
+          appBar: _renderWidgetMode ? null : _buildCustomTitleBar(),
           body: FutureBuilder<List<Task>>(
             future: _loadPlanTasks(),
             builder: (context, tasksSnapshot) {
@@ -2352,14 +2357,14 @@ BoxConstraints _widgetWindowBounds() {
                             final tasks = tasksSnapshot.data!;
               DebugLog.window('[StartupSizing] build received tasks count=${tasks.length}');
 
-              if (!_widgetMode &&
+              if (!_renderWidgetMode &&
                   !_startupSizingQueued &&
                   (!_didInitialTaskAwareSizing || _lastNormalSizedTaskCount != tasks.length)) {
                 _startupSizingQueued = true;
 
                 WidgetsBinding.instance.addPostFrameCallback((_) async {
                   _startupSizingQueued = false;
-                  if (!mounted || _widgetMode) return;
+                  if (!mounted || _renderWidgetMode) return;
                   await _applyNormalWindowSizingForTasks(tasks.length);
                 });
               }
@@ -2367,7 +2372,7 @@ BoxConstraints _widgetWindowBounds() {
                 valueListenable: _ticker,
                 builder: (context, tick, _) {
                   final activeSession = _activeSessionTask(tasks);
-                  if (_widgetMode || _isExitingWidgetMode) {
+                  if (_renderWidgetMode) {
                   return Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: ClipRRect(

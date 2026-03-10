@@ -70,7 +70,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   static const double _normalMinHeight = 640;
   static const double _normalMaxWidth = 2200;
   static const double _windowScreenMargin = 40;
-  static const double _normalBaseHeight = 470;
+  static const double _normalBaseHeight = 530;
   static const double _normalTaskRowHeight = 48;
   static const double _widgetDefaultHeight = 300;
   static const double _widgetDefaultWidth = 860;
@@ -79,6 +79,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
+  final ScrollController _normalTaskListScrollController = ScrollController();
 
   late Future<void> _initFuture;
   late final Timer _timer;
@@ -126,6 +127,7 @@ void dispose() {
   _timer.cancel();
   _currentWindowRefreshTimer.cancel();
   _ticker.dispose();
+  _normalTaskListScrollController.dispose();
   super.dispose();
 }
 
@@ -631,13 +633,22 @@ Future<void> _initialize() async {
 
   double _recommendedNormalHeight(int taskCount) {
     final bounds = _normalWindowBounds();
-    final desired = _normalBaseHeight + (taskCount * _normalTaskRowHeight);
+    final visibleTaskCount = taskCount < 1 ? 1 : taskCount;
+    const additionalLayoutOverhead = 36.0;
+    const safetyBuffer = 16.0;
+    final desired =
+        _normalBaseHeight +
+        additionalLayoutOverhead +
+        (visibleTaskCount * _normalTaskRowHeight) +
+        safetyBuffer;
     return desired.clamp(bounds.minHeight, bounds.maxHeight).toDouble();
   }
 
   Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
     if (!_isDesktopPlatform() || _widgetMode) return;
-    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) return;
+    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) {
+      return;
+    }
 
     _lastNormalSizedTaskCount = taskCount;
     final bounds = _normalWindowBounds();
@@ -654,8 +665,30 @@ Future<void> _initialize() async {
             : comfortableTableWidth)
         .clamp(bounds.minWidth, bounds.maxWidth)
         .toDouble();
-    final next = Size(targetWidth, targetHeight);
-    await windowManager.setSize(next);
+    await windowManager.setSize(Size(targetWidth, targetHeight));
+
+    final overflowReady = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!overflowReady.isCompleted) overflowReady.complete();
+    });
+    await overflowReady.future;
+
+    if (_normalTaskListScrollController.hasClients) {
+      final overflow =
+          _normalTaskListScrollController.position.maxScrollExtent;
+      if (overflow > 0) {
+        final sized = await windowManager.getSize();
+        const overflowBuffer = 12.0;
+        final expandedHeight =
+            (sized.height + overflow + overflowBuffer)
+                .clamp(bounds.minHeight, bounds.maxHeight)
+                .toDouble();
+        if (expandedHeight > sized.height) {
+          await windowManager.setSize(Size(sized.width, expandedHeight));
+        }
+      }
+    }
+
     _appliedInitialNormalBounds = true;
   }
 
@@ -2647,17 +2680,24 @@ Future<void> _initialize() async {
                                   _buildHeaderRow(),
                                   const Divider(height: 1),
                                   Expanded(
-                                    child: ListView.separated(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        8,
-                                        6,
-                                        8,
-                                        8,
-                                      ),
-                                      itemCount: tasks.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(height: 2),
-                                      itemBuilder: (context, index) {
+                                    child: Scrollbar(
+                                      controller: _normalTaskListScrollController,
+                                      thumbVisibility: true,
+                                      interactive: true,
+                                      child: ListView.separated(
+                                        controller:
+                                            _normalTaskListScrollController,
+                                        primary: false,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          8,
+                                          6,
+                                          8,
+                                          8,
+                                        ),
+                                        itemCount: tasks.length,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(height: 2),
+                                        itemBuilder: (context, index) {
                                         final activeWindowIndex =
                                             _activeWindowTaskIndex(
                                               tasks,
@@ -2821,7 +2861,8 @@ Future<void> _initialize() async {
                                             ),
                                           ),
                                         );
-                                      },
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ],

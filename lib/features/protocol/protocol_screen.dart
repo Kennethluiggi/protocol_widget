@@ -572,7 +572,7 @@ Future<void> _initialize() async {
   }
 
   BoxConstraints _normalWindowBounds() {
-    const fallback = Size(1280, 800);
+    const fallback = Size(1920, 1080);
     final screen = _displayLogicalSize();
     final isSmallForNormal =
         screen.width < _normalMinWidth || screen.height < _normalMinHeight;
@@ -586,7 +586,11 @@ Future<void> _initialize() async {
       );
     }
 
-    final availableWidth = (effectiveScreen.width - _windowScreenMargin)
+    final knownFullModeSize = _lastKnownFullModeLogicalSize ?? fallback;
+    final widthReference = effectiveScreen.width >= knownFullModeSize.width
+        ? effectiveScreen.width
+        : knownFullModeSize.width;
+    final availableWidth = (widthReference - _windowScreenMargin)
         .clamp(_normalMinWidth, double.infinity)
         .toDouble();
     final availableHeight = (effectiveScreen.height - _windowScreenMargin)

@@ -586,10 +586,7 @@ Future<void> _initialize() async {
       );
     }
 
-    final knownFullModeSize = _lastKnownFullModeLogicalSize ?? fallback;
-    final widthReference = effectiveScreen.width >= knownFullModeSize.width
-        ? effectiveScreen.width
-        : knownFullModeSize.width;
+    final widthReference = screen.width > fallback.width ? screen.width : fallback.width;
     final availableWidth = (widthReference - _windowScreenMargin)
         .clamp(_normalMinWidth, double.infinity)
         .toDouble();
@@ -651,7 +648,10 @@ Future<void> _initialize() async {
 
     final current = await windowManager.getSize();
     final targetHeight = _recommendedNormalHeight(taskCount);
-    final targetWidth = current.width
+    const comfortableTableWidth = 1400.0;
+    final targetWidth = (current.width > comfortableTableWidth
+            ? current.width
+            : comfortableTableWidth)
         .clamp(bounds.minWidth, bounds.maxWidth)
         .toDouble();
     final next = Size(targetWidth, targetHeight);

@@ -572,7 +572,7 @@ Future<void> _initialize() async {
   }
 
   BoxConstraints _normalWindowBounds() {
-    const fallback = Size(1280, 800);
+    const fallback = Size(1920, 1080);
     final screen = _displayLogicalSize();
     final isSmallForNormal =
         screen.width < _normalMinWidth || screen.height < _normalMinHeight;
@@ -586,19 +586,21 @@ Future<void> _initialize() async {
       );
     }
 
-    final availableWidth = (effectiveScreen.width - _windowScreenMargin)
+    final widthReference = screen.width > fallback.width ? screen.width : fallback.width;
+    final availableWidth = (widthReference - _windowScreenMargin)
         .clamp(_normalMinWidth, double.infinity)
         .toDouble();
     final availableHeight = (effectiveScreen.height - _windowScreenMargin)
         .clamp(_normalMinHeight, double.infinity)
         .toDouble();
     final maxWidth = _normalMaxWidth.clamp(_normalMinWidth, availableWidth).toDouble();
-    final maxHeight = availableHeight;
+    final permissiveMaxHeight =
+        availableHeight < (_normalMinHeight + 240) ? (_normalMinHeight + 600) : availableHeight;
     return BoxConstraints(
       minWidth: _normalMinWidth,
       minHeight: _normalMinHeight,
       maxWidth: maxWidth,
-      maxHeight: maxHeight,
+      maxHeight: permissiveMaxHeight,
     );
   }
 
@@ -635,20 +637,26 @@ Future<void> _initialize() async {
 
   Future<void> _applyNormalWindowSizingForTasks(int taskCount) async {
     if (!_isDesktopPlatform() || _widgetMode) return;
-    if (_lastNormalSizedTaskCount == taskCount) return;
+    if (_lastNormalSizedTaskCount == taskCount && _appliedInitialNormalBounds) return;
 
     _lastNormalSizedTaskCount = taskCount;
     final bounds = _normalWindowBounds();
     await windowManager.setMinimumSize(Size(bounds.minWidth, bounds.minHeight));
     await windowManager.setMaximumSize(Size(bounds.maxWidth, bounds.maxHeight));
 
+    if (_appliedInitialNormalBounds) return;
+
     final current = await windowManager.getSize();
     final targetHeight = _recommendedNormalHeight(taskCount);
-    final targetWidth = current.width
+    const comfortableTableWidth = 1400.0;
+    final targetWidth = (current.width > comfortableTableWidth
+            ? current.width
+            : comfortableTableWidth)
         .clamp(bounds.minWidth, bounds.maxWidth)
         .toDouble();
     final next = Size(targetWidth, targetHeight);
     await windowManager.setSize(next);
+    _appliedInitialNormalBounds = true;
   }
 
   Future<void> _applyWidgetModeWindowState(bool enabled) async {

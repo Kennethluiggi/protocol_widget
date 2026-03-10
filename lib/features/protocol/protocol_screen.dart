@@ -79,6 +79,7 @@ class _ProtocolScreenState extends State<ProtocolScreen>
 
   final Map<int, DateTime> _runningSince = {};
   final ValueNotifier<DateTime> _ticker = ValueNotifier(DateTime.now());
+  final ScrollController _normalTaskListScrollController = ScrollController();
 
   late Future<void> _initFuture;
   late final Timer _timer;
@@ -126,6 +127,7 @@ void dispose() {
   _timer.cancel();
   _currentWindowRefreshTimer.cancel();
   _ticker.dispose();
+  _normalTaskListScrollController.dispose();
   super.dispose();
 }
 
@@ -631,7 +633,14 @@ Future<void> _initialize() async {
 
   double _recommendedNormalHeight(int taskCount) {
     final bounds = _normalWindowBounds();
-    final desired = _normalBaseHeight + (taskCount * _normalTaskRowHeight);
+    final visibleTaskCount = taskCount < 1 ? 1 : taskCount;
+    const additionalLayoutOverhead = 36.0;
+    const safetyBuffer = 16.0;
+    final desired =
+        _normalBaseHeight +
+        additionalLayoutOverhead +
+        (visibleTaskCount * _normalTaskRowHeight) +
+        safetyBuffer;
     return desired.clamp(bounds.minHeight, bounds.maxHeight).toDouble();
   }
 
@@ -2647,17 +2656,24 @@ Future<void> _initialize() async {
                                   _buildHeaderRow(),
                                   const Divider(height: 1),
                                   Expanded(
-                                    child: ListView.separated(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        8,
-                                        6,
-                                        8,
-                                        8,
-                                      ),
-                                      itemCount: tasks.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(height: 2),
-                                      itemBuilder: (context, index) {
+                                    child: Scrollbar(
+                                      controller: _normalTaskListScrollController,
+                                      thumbVisibility: true,
+                                      interactive: true,
+                                      child: ListView.separated(
+                                        controller:
+                                            _normalTaskListScrollController,
+                                        primary: false,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          8,
+                                          6,
+                                          8,
+                                          8,
+                                        ),
+                                        itemCount: tasks.length,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(height: 2),
+                                        itemBuilder: (context, index) {
                                         final activeWindowIndex =
                                             _activeWindowTaskIndex(
                                               tasks,
@@ -2821,7 +2837,8 @@ Future<void> _initialize() async {
                                             ),
                                           ),
                                         );
-                                      },
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ],

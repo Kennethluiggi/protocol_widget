@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:isar/isar.dart';
 import '../../data/isar_db.dart';
+import '../../data/models/daily_task_completion.dart';
 import '../../data/models/task.dart';
 import '../../debug/debug_log.dart';
 class ProtocolScreen extends StatefulWidget {
@@ -1007,7 +1008,152 @@ BoxConstraints _widgetWindowBounds() {
         .planIdEqualTo(_planId)
         .sortByOrderIndex()
         .findAll();
+    _debugPrintTaskIds(tasks);
     return tasks;
+  }
+
+  String _todayDateKey() {
+    final now = DateTime.now().toLocal();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  Future<DailyTaskCompletion?> _getDailyCompletionForTask(
+    String taskId,
+    String dateKey,
+  ) async {
+    final isar = await IsarDb.instance();
+    final records = await isar.dailyTaskCompletions.where().findAll();
+    for (final record in records) {
+      if (record.taskId == taskId && record.dateKey == dateKey) {
+        return record;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _upsertDailyCompletionForTask(Task task, int completedMinutes) async {
+    final targetMinutesSnapshot = task.targetMin;
+    if (targetMinutesSnapshot == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Set a goal minutes value before logging time for this task.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final dateKey = _todayDateKey();
+    final taskId = task.id.toString();
+    final isDone = completedMinutes >= targetMinutesSnapshot;
+
+    debugPrint(
+      '[DailyCompletion] save request taskId=$taskId dateKey=$dateKey completedMinutes=$completedMinutes targetMinutesSnapshot=$targetMinutesSnapshot isDone=$isDone',
+    );
+
+    final isar = await IsarDb.instance();
+    final existing = await _getDailyCompletionForTask(taskId, dateKey);
+    await isar.writeTxn(() async {
+      final record = existing ?? DailyTaskCompletion();
+      record.taskId = taskId;
+      record.dateKey = dateKey;
+      record.completedMinutes = completedMinutes;
+      record.targetMinutesSnapshot = targetMinutesSnapshot;
+      record.isDone = isDone;
+      await isar.dailyTaskCompletions.put(record);
+    });
+
+    final saved = await _getDailyCompletionForTask(taskId, dateKey);
+    if (saved != null) {
+      debugPrint(
+        '[DailyCompletion] saved record id=${saved.id} taskId=${saved.taskId} dateKey=${saved.dateKey} completedMinutes=${saved.completedMinutes} targetMinutesSnapshot=${saved.targetMinutesSnapshot} isDone=${saved.isDone}',
+      );
+    }
+  }
+
+  void _debugPrintTaskIds(List<Task> tasks) {
+    for (final task in tasks) {
+      debugPrint('[TaskDebug] task title="${task.title}" id=${task.id}');
+    }
+  }
+
+  Future<void> _openLogTimeDialog(Task task) async {
+    if (task.targetMin == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Set a goal minutes value before logging time for this task.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final controller = TextEditingController();
+    String? errorText;
+
+    final didSave = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Log Time'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter the total amount of time you completed for this task today.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: 'Minutes',
+                      border: const OutlineInputBorder(),
+                      errorText: errorText,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final raw = controller.text.trim();
+                    final parsed = int.tryParse(raw);
+                    if (raw.isEmpty || parsed == null || parsed < 0) {
+                      setDialogState(() {
+                        errorText = 'Enter a non-negative whole number';
+                      });
+                      return;
+                    }
+                    Navigator.of(context).pop(true);
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (didSave == true) {
+      final completedMinutes = int.parse(controller.text.trim());
+      await _upsertDailyCompletionForTask(task, completedMinutes);
+    }
+
+    controller.dispose();
   }
 
   Future<void> _openAddTaskDialog(List<Task> tasks) async {
@@ -2042,6 +2188,9 @@ BoxConstraints _widgetWindowBounds() {
       case 'edit_goal':
         await _editGoal(task);
         break;
+      case 'log_time':
+        await _openLogTimeDialog(task);
+        break;
       case 'delete':
         await _deleteTask(task, tasks);
         break;
@@ -2936,6 +3085,10 @@ BoxConstraints _widgetWindowBounds() {
                                               const PopupMenuItem(
                                                 value: 'edit_goal',
                                                 child: Text('Edit goal'),
+                                              ),
+                                              const PopupMenuItem(
+                                                value: 'log_time',
+                                                child: Text('Log Time'),
                                               ),
                                               if (!_isMandatoryTask(task))
                                                 const PopupMenuItem(

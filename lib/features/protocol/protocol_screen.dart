@@ -112,6 +112,20 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   String _mantraLine3 = _defaultLine3;
   String _mantraLine4 = _defaultLine4;
 
+  static const int _dailyMinutesFloor = 0;
+
+  static double _clampPercent(double value) => value.clamp(0.0, 1.0);
+
+  bool _isValidTargetSnapshot(int? targetMinutesSnapshot) {
+    return targetMinutesSnapshot != null && targetMinutesSnapshot > 0;
+  }
+
+  String _formatDateKey(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
 @override
 void initState() {
   super.initState();
@@ -1019,18 +1033,340 @@ BoxConstraints _widgetWindowBounds() {
     return '${now.year}-$month-$day';
   }
 
+  Future<List<DailyTaskCompletion>> _getAllDailyCompletions() async {
+    final isar = await IsarDb.instance();
+    final records = await isar.dailyTaskCompletions.where().findAll();
+    debugPrint('[DailyAnalytics] read all rows count=${records.length}');
+    return records;
+  }
+
+  Future<List<DailyTaskCompletion>> _getDailyCompletionsByTaskId(
+    String taskId, {
+    List<DailyTaskCompletion>? preloadedRows,
+  }) async {
+    final records = preloadedRows ?? await _getAllDailyCompletions();
+    final rows = records.where((record) => record.taskId == taskId).toList();
+    debugPrint('[DailyAnalytics] read by taskId=$taskId count=${rows.length}');
+    return rows;
+  }
+
+  Future<List<DailyTaskCompletion>> _getDailyCompletionsByDateKey(
+    String dateKey, {
+    List<DailyTaskCompletion>? preloadedRows,
+  }) async {
+    final records = preloadedRows ?? await _getAllDailyCompletions();
+    final rows = records.where((record) => record.dateKey == dateKey).toList();
+    debugPrint('[DailyAnalytics] read by dateKey=$dateKey count=${rows.length}');
+    return rows;
+  }
+
   Future<DailyTaskCompletion?> _getDailyCompletionForTask(
+    String taskId,
+    String dateKey, {
+    List<DailyTaskCompletion>? preloadedRows,
+  }) async {
+    final rows = await _getDailyCompletionsByDateKey(
+      dateKey,
+      preloadedRows: preloadedRows,
+    );
+    DailyTaskCompletion? match;
+    for (final record in rows) {
+      if (record.taskId == taskId) {
+        match = record;
+        break;
+      }
+    }
+    debugPrint(
+      '[DailyAnalytics] read by taskId+dateKey taskId=$taskId dateKey=$dateKey found=${match != null}',
+    );
+    return match;
+  }
+
+  double _calculateTaskDailyCompletionPercent(DailyTaskCompletion? record) {
+    if (record == null || !_isValidTargetSnapshot(record.targetMinutesSnapshot)) {
+      return 0.0;
+    }
+    final completedMinutes = record.completedMinutes < _dailyMinutesFloor
+        ? _dailyMinutesFloor
+        : record.completedMinutes;
+    final ratio = completedMinutes / record.targetMinutesSnapshot;
+    return _clampPercent(ratio);
+  }
+
+  Future<double> _calculateDailyCompletionPercentForTask(
     String taskId,
     String dateKey,
   ) async {
-    final isar = await IsarDb.instance();
-    final records = await isar.dailyTaskCompletions.where().findAll();
-    for (final record in records) {
-      if (record.taskId == taskId && record.dateKey == dateKey) {
-        return record;
+    final record = await _getDailyCompletionForTask(taskId, dateKey);
+    final percent = _calculateTaskDailyCompletionPercent(record);
+    debugPrint(
+      '[DailyAnalytics] task daily percent taskId=$taskId dateKey=$dateKey percent=$percent',
+    );
+    return percent;
+  }
+
+  Map<String, DailyTaskCompletion> _buildTaskCompletionMapForDate(
+    List<DailyTaskCompletion> rows,
+    String dateKey,
+  ) {
+    final byTaskId = <String, DailyTaskCompletion>{};
+    for (final row in rows) {
+      if (row.dateKey != dateKey) continue;
+      final existing = byTaskId[row.taskId];
+      if (existing == null || row.id > existing.id) {
+        byTaskId[row.taskId] = row;
       }
     }
-    return null;
+    return byTaskId;
+  }
+
+  Map<String, Map<String, DailyTaskCompletion>> _buildCompletionMapByDateAndTask(
+    List<DailyTaskCompletion> rows,
+  ) {
+    final byDateAndTask = <String, Map<String, DailyTaskCompletion>>{};
+    for (final row in rows) {
+      final byTask = byDateAndTask.putIfAbsent(
+        row.dateKey,
+        () => <String, DailyTaskCompletion>{},
+      );
+      final existing = byTask[row.taskId];
+      if (existing == null || row.id > existing.id) {
+        byTask[row.taskId] = row;
+      }
+    }
+    return byDateAndTask;
+  }
+
+  Future<List<String>> _getExpectedAnalyticsTaskIds() async {
+    final isar = await IsarDb.instance();
+    final tasks = await isar.tasks
+        .filter()
+        .planIdEqualTo(_planId)
+        .sortByOrderIndex()
+        .findAll();
+
+    final expectedTaskIds = <String>[];
+    for (final task in tasks) {
+      final targetMin = task.targetMin;
+      if (targetMin != null && targetMin > 0) {
+        expectedTaskIds.add(task.id.toString());
+      }
+    }
+
+    debugPrint(
+      '[DailyAnalytics] expected task set planId=$_planId expectedTaskCount=${expectedTaskIds.length}',
+    );
+    return expectedTaskIds;
+  }
+
+  Future<double> _calculateDailyOverallAveragePercent(String dateKey) async {
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final expectedTaskCount = expectedTaskIds.length;
+    if (expectedTaskCount == 0) {
+      debugPrint(
+        '[DailyAnalytics] overall daily avg dateKey=$dateKey expectedTaskCount=0 matchedRowCount=0 missingRowCount=0 average=0.0',
+      );
+      return 0.0;
+    }
+
+    final allRows = await _getAllDailyCompletions();
+    final rows = await _getDailyCompletionsByDateKey(
+      dateKey,
+      preloadedRows: allRows,
+    );
+    final byTaskId = _buildTaskCompletionMapForDate(rows, dateKey);
+
+    var total = 0.0;
+    var matchedRowCount = 0;
+    var missingRowCount = 0;
+
+    for (final taskId in expectedTaskIds) {
+      final row = byTaskId[taskId];
+      if (row == null) {
+        missingRowCount += 1;
+        continue;
+      }
+      matchedRowCount += 1;
+      total += _calculateTaskDailyCompletionPercent(row);
+    }
+
+    final average = _clampPercent(total / expectedTaskCount);
+    debugPrint(
+      '[DailyAnalytics] overall daily avg dateKey=$dateKey expectedTaskCount=$expectedTaskCount matchedRowCount=$matchedRowCount missingRowCount=$missingRowCount average=$average',
+    );
+    return average;
+  }
+
+
+  Future<void> _debugPrintDailyCompletionSummaryForDate(String dateKey) async {
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final expectedTaskCount = expectedTaskIds.length;
+    final allRows = await _getAllDailyCompletions();
+    final rowsForDate = await _getDailyCompletionsByDateKey(
+      dateKey,
+      preloadedRows: allRows,
+    );
+    final byTaskId = _buildTaskCompletionMapForDate(rowsForDate, dateKey);
+
+    final matchedTaskIds = <String>[];
+    final missingTaskIds = <String>[];
+    var total = 0.0;
+
+    for (final taskId in expectedTaskIds) {
+      final row = byTaskId[taskId];
+      if (row == null) {
+        missingTaskIds.add(taskId);
+        continue;
+      }
+      matchedTaskIds.add(taskId);
+      total += _calculateTaskDailyCompletionPercent(row);
+    }
+
+    final average = expectedTaskCount == 0
+        ? 0.0
+        : _clampPercent(total / expectedTaskCount);
+
+    debugPrint(
+      '[DailyAnalytics] daily summary dateKey=$dateKey expectedTaskCount=$expectedTaskCount totalRowsForDate=${rowsForDate.length} matchedTaskIds=$matchedTaskIds missingTaskIds=$missingTaskIds average=$average',
+    );
+  }
+
+  List<String> _buildWeekDateKeys(DateTime anchorDate) {
+    final localDate = DateTime(anchorDate.year, anchorDate.month, anchorDate.day);
+    final weekdayOffset = localDate.weekday - DateTime.monday;
+    final weekStart = localDate.subtract(Duration(days: weekdayOffset));
+    final keys = List<String>.generate(
+      7,
+      (index) => _formatDateKey(weekStart.add(Duration(days: index))),
+    );
+    debugPrint(
+      '[DailyAnalytics] week date keys anchor=${_formatDateKey(localDate)} start=${keys.first} end=${keys.last} count=${keys.length}',
+    );
+    return keys;
+  }
+
+  List<String> _buildMonthDateKeys(DateTime anchorDate) {
+    final firstDay = DateTime(anchorDate.year, anchorDate.month, 1);
+    final firstDayNextMonth = anchorDate.month == 12
+        ? DateTime(anchorDate.year + 1, 1, 1)
+        : DateTime(anchorDate.year, anchorDate.month + 1, 1);
+    final daysInMonth = firstDayNextMonth.difference(firstDay).inDays;
+    final keys = List<String>.generate(
+      daysInMonth,
+      (index) => _formatDateKey(firstDay.add(Duration(days: index))),
+    );
+    debugPrint(
+      '[DailyAnalytics] month date keys anchor=${_formatDateKey(DateTime(anchorDate.year, anchorDate.month, anchorDate.day))} start=${keys.first} end=${keys.last} count=${keys.length}',
+    );
+    return keys;
+  }
+
+  List<String> _buildYearDateKeys(DateTime anchorDate) {
+    final firstDay = DateTime(anchorDate.year, 1, 1);
+    final firstDayNextYear = DateTime(anchorDate.year + 1, 1, 1);
+    final daysInYear = firstDayNextYear.difference(firstDay).inDays;
+    final keys = List<String>.generate(
+      daysInYear,
+      (index) => _formatDateKey(firstDay.add(Duration(days: index))),
+    );
+    debugPrint(
+      '[DailyAnalytics] year date keys year=${anchorDate.year} start=${keys.first} end=${keys.last} count=${keys.length}',
+    );
+    return keys;
+  }
+
+  Future<Map<String, double>> _calculateDailyAverageSeries(
+    List<String> dateKeys, {
+    List<String>? expectedTaskIds,
+    List<DailyTaskCompletion>? preloadedRows,
+  }) async {
+    final resolvedExpectedTaskIds = expectedTaskIds ?? await _getExpectedAnalyticsTaskIds();
+    final expectedTaskCount = resolvedExpectedTaskIds.length;
+
+    final records = preloadedRows ?? await _getAllDailyCompletions();
+    final byDateAndTask = _buildCompletionMapByDateAndTask(records);
+
+    final series = <String, double>{};
+    for (final dateKey in dateKeys) {
+      if (expectedTaskCount == 0) {
+        series[dateKey] = 0.0;
+        debugPrint(
+          '[DailyAnalytics] series daily avg dateKey=$dateKey expectedTaskCount=0 matchedRowCount=0 missingRowCount=0 average=0.0',
+        );
+        continue;
+      }
+
+      final byTaskId = byDateAndTask[dateKey] ?? const <String, DailyTaskCompletion>{};
+      var totalPercent = 0.0;
+      var matchedRowCount = 0;
+      var missingRowCount = 0;
+
+      for (final taskId in resolvedExpectedTaskIds) {
+        final row = byTaskId[taskId];
+        if (row == null) {
+          missingRowCount += 1;
+          continue;
+        }
+        matchedRowCount += 1;
+        totalPercent += _calculateTaskDailyCompletionPercent(row);
+      }
+
+      final average = _clampPercent(totalPercent / expectedTaskCount);
+      series[dateKey] = average;
+      debugPrint(
+        '[DailyAnalytics] series daily avg dateKey=$dateKey expectedTaskCount=$expectedTaskCount matchedRowCount=$matchedRowCount missingRowCount=$missingRowCount average=$average',
+      );
+    }
+
+    debugPrint(
+      '[DailyAnalytics] series computed points=${series.length} first=${dateKeys.isEmpty ? 'n/a' : dateKeys.first} last=${dateKeys.isEmpty ? 'n/a' : dateKeys.last}',
+    );
+    return series;
+  }
+
+  Future<Map<String, double>> _calculateWeeklyAverageSeries(DateTime anchorDate) async {
+    final dateKeys = _buildWeekDateKeys(anchorDate);
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final records = await _getAllDailyCompletions();
+    final series = await _calculateDailyAverageSeries(
+      dateKeys,
+      expectedTaskIds: expectedTaskIds,
+      preloadedRows: records,
+    );
+    debugPrint(
+      '[DailyAnalytics] weekly series anchor=${_formatDateKey(DateTime(anchorDate.year, anchorDate.month, anchorDate.day))} points=${series.length}',
+    );
+    return series;
+  }
+
+  Future<Map<String, double>> _calculateMonthlyAverageSeries(DateTime anchorDate) async {
+    final dateKeys = _buildMonthDateKeys(anchorDate);
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final records = await _getAllDailyCompletions();
+    final series = await _calculateDailyAverageSeries(
+      dateKeys,
+      expectedTaskIds: expectedTaskIds,
+      preloadedRows: records,
+    );
+    debugPrint(
+      '[DailyAnalytics] monthly series anchor=${_formatDateKey(DateTime(anchorDate.year, anchorDate.month, anchorDate.day))} points=${series.length}',
+    );
+    return series;
+  }
+
+  Future<Map<String, double>> _calculateYearlyAverageSeries(DateTime anchorDate) async {
+    final dateKeys = _buildYearDateKeys(anchorDate);
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final records = await _getAllDailyCompletions();
+    final series = await _calculateDailyAverageSeries(
+      dateKeys,
+      expectedTaskIds: expectedTaskIds,
+      preloadedRows: records,
+    );
+    debugPrint(
+      '[DailyAnalytics] yearly series year=${anchorDate.year} points=${series.length}',
+    );
+    return series;
   }
 
   Future<void> _upsertDailyCompletionForTask(Task task, int completedMinutes) async {

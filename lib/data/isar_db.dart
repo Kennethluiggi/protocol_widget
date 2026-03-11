@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'models/daily_task_completion.dart';
 import 'models/task.dart';
 
 class IsarDb {
@@ -13,7 +14,7 @@ class IsarDb {
     debugPrint('[IsarDb] support dir: ${dir.path}');
 
     _isar = await Isar.open(
-      [TaskSchema],
+      [TaskSchema, DailyTaskCompletionSchema],
       directory: dir.path,
       inspector: true,
     );

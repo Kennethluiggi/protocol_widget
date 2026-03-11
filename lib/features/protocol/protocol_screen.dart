@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -1367,6 +1368,334 @@ BoxConstraints _widgetWindowBounds() {
       '[DailyAnalytics] yearly series year=${anchorDate.year} points=${series.length}',
     );
     return series;
+  }
+
+
+  Future<void> _openSummaryDialog() async {
+    debugPrint('[SummaryUI] opening dialog');
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        var selectedRange = 'week';
+        var seriesFuture = _loadSummarySeries(selectedRange);
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Summary'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 860,
+                  minWidth: 520,
+                  maxHeight: 620,
+                ),
+                child: SizedBox(
+                  width: 820,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment<String>(
+                              value: 'week',
+                              label: Text('Week'),
+                            ),
+                            ButtonSegment<String>(
+                              value: 'month',
+                              label: Text('Month'),
+                            ),
+                            ButtonSegment<String>(
+                              value: 'year',
+                              label: Text('Year'),
+                            ),
+                          ],
+                          selected: {selectedRange},
+                          showSelectedIcon: false,
+                          onSelectionChanged: (selection) {
+                            final nextRange = selection.first;
+                            if (nextRange == selectedRange) return;
+                            setDialogState(() {
+                              selectedRange = nextRange;
+                              seriesFuture = _loadSummarySeries(selectedRange);
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        FutureBuilder<Map<String, double>>(
+                          future: seriesFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const SizedBox(
+                                height: 280,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+
+                            if (snapshot.hasError) {
+                              return const SizedBox(
+                                height: 280,
+                                child: Center(
+                                  child: Text(
+                                    'No summary data yet. Use Start/Done or Log Time to begin tracking progress.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final points = snapshot.data ?? const <String, double>{};
+                            if (points.isEmpty) {
+                              return const SizedBox(
+                                height: 280,
+                                child: Center(
+                                  child: Text(
+                                    'No summary data yet. Use Start/Done or Log Time to begin tracking progress.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return _buildSummaryChart(points: points, range: selectedRange);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        FutureBuilder<Map<String, dynamic>>(
+                          future: _buildTodaySummaryData(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: LinearProgressIndicator(minHeight: 2),
+                              );
+                            }
+
+                            if (snapshot.hasError || !snapshot.hasData) {
+                              return const Text(
+                                'Today's summary is unavailable right now.',
+                              );
+                            }
+
+                            final data = snapshot.data!;
+                            final percent = ((data['percent'] as double) * 100).round();
+                            final expectedCount = data['expectedCount'] as int;
+                            final loggedCount = data['loggedCount'] as int;
+                            final missingCount = data['missingCount'] as int;
+
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Today's Summary',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text('Today's Completion: $percent%'),
+                                  const SizedBox(height: 4),
+                                  Text('Logged Tasks: $loggedCount / $expectedCount'),
+                                  const SizedBox(height: 4),
+                                  Text('Missing Tasks: $missingCount'),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Map<String, double>> _loadSummarySeries(String range) async {
+    debugPrint('[SummaryUI] loading range=$range');
+    final now = DateTime.now();
+    late final Map<String, double> series;
+    switch (range) {
+      case 'month':
+        series = await _calculateMonthlyAverageSeries(now);
+        break;
+      case 'year':
+        series = await _calculateYearlyAverageSeries(now);
+        break;
+      case 'week':
+      default:
+        series = await _calculateWeeklyAverageSeries(now);
+        break;
+    }
+    debugPrint('[SummaryUI] loaded points=${series.length} range=$range');
+    return series;
+  }
+
+  Future<Map<String, dynamic>> _buildTodaySummaryData() async {
+    final todayKey = _todayDateKey();
+    await _debugPrintDailyCompletionSummaryForDate(todayKey);
+    final percent = await _calculateDailyOverallAveragePercent(todayKey);
+    final expectedTaskIds = await _getExpectedAnalyticsTaskIds();
+    final rows = await _getDailyCompletionsByDateKey(todayKey);
+    final byTask = _buildTaskCompletionMapForDate(rows, todayKey);
+    final loggedCount = expectedTaskIds.where((id) => byTask.containsKey(id)).length;
+    final expectedCount = expectedTaskIds.length;
+    final missingCount = math.max(0, expectedCount - loggedCount);
+    debugPrint(
+      '[SummaryUI] today summary percent=$percent logged=$loggedCount expected=$expectedCount missing=$missingCount',
+    );
+    return {
+      'percent': percent,
+      'expectedCount': expectedCount,
+      'loggedCount': loggedCount,
+      'missingCount': missingCount,
+    };
+  }
+
+  Widget _buildSummaryChart({
+    required Map<String, double> points,
+    required String range,
+  }) {
+    final entries = points.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final values = entries.map((entry) => _clampPercent(entry.value)).toList();
+    final labels = entries
+        .map((entry) => _buildSummaryXAxisLabel(entry.key, range))
+        .toList();
+
+    return SizedBox(
+      height: 320,
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 44,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: const [
+                      Text('100%'),
+                      Text('75%'),
+                      Text('50%'),
+                      Text('25%'),
+                      Text('0%'),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: CustomPaint(
+                    painter: _SummaryLineChartPainter(values: values),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 20,
+            child: _buildSummaryXAxis(labels, range),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryXAxis(List<String> labels, String range) {
+    if (labels.isEmpty) return const SizedBox.shrink();
+
+    final visibleIndexes = <int>{};
+    if (range == 'year') {
+      for (var i = 0; i < labels.length; i++) {
+        final label = labels[i];
+        if (label.isNotEmpty) {
+          visibleIndexes.add(i);
+        }
+      }
+    } else if (range == 'month') {
+      final step = math.max(1, (labels.length / 8).ceil());
+      for (var i = 0; i < labels.length; i += step) {
+        visibleIndexes.add(i);
+      }
+      visibleIndexes.add(labels.length - 1);
+    } else {
+      for (var i = 0; i < labels.length; i++) {
+        visibleIndexes.add(i);
+      }
+    }
+
+    return Row(
+      children: List<Widget>.generate(labels.length, (index) {
+        final show = visibleIndexes.contains(index);
+        return Expanded(
+          child: Align(
+            alignment: Alignment.center,
+            child: show
+                ? Text(
+                    labels[index],
+                    style: const TextStyle(fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : const SizedBox.shrink(),
+          ),
+        );
+      }),
+    );
+  }
+
+  String _buildSummaryXAxisLabel(String dateKey, String range) {
+    final parts = dateKey.split('-');
+    if (parts.length != 3) return dateKey;
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) return dateKey;
+
+    if (range == 'week') {
+      final date = DateTime(year, month, day);
+      final idx = date.weekday - 1;
+      const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      if (idx < 0 || idx >= weekdayLabels.length) return dateKey;
+      return weekdayLabels[idx];
+    }
+
+    if (range == 'month') {
+      return day.toString();
+    }
+
+    if (range == 'year') {
+      const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      if (day == 1 && month >= 1 && month <= 12) {
+        return monthLabels[month - 1];
+      }
+      return '';
+    }
+
+    return dateKey;
   }
 
   Future<void> _upsertDailyCompletionForTask(Task task, int completedMinutes) async {
@@ -3213,6 +3542,11 @@ BoxConstraints _widgetWindowBounds() {
                 onPressed: tasks.isEmpty ? null : () => _resetToday(tasks),
                 child: const Text('Reset Today'),
               ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _openSummaryDialog,
+                child: const Text('Summary'),
+              ),
             ],
           ),
         ),
@@ -3460,6 +3794,7 @@ BoxConstraints _widgetWindowBounds() {
       },
     );
   }
+
   Widget _buildControls(Task task, int elapsedMs, List<Task> tasks) {
     final activeSession = _activeSessionTask(tasks);
     final startBlockedByOtherSession =
@@ -3560,3 +3895,82 @@ BoxConstraints _widgetWindowBounds() {
     }
   }
 }
+
+class _SummaryLineChartPainter extends CustomPainter {
+  _SummaryLineChartPainter({required this.values});
+
+  final List<double> values;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final backgroundPaint = Paint()
+      ..color = Colors.transparent
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(Offset.zero & size, backgroundPaint);
+
+    final axisPaint = Paint()
+      ..color = Colors.grey.shade400
+      ..strokeWidth = 1;
+    final gridPaint = Paint()
+      ..color = Colors.grey.shade300
+      ..strokeWidth = 1;
+
+    for (var i = 0; i <= 4; i++) {
+      final y = size.height * (i / 4);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    canvas.drawLine(
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+      axisPaint,
+    );
+    canvas.drawLine(const Offset(0, 0), Offset(0, size.height), axisPaint);
+
+    if (values.isEmpty) return;
+
+    final path = Path();
+    final pointPaint = Paint()
+      ..color = Colors.blue.shade600
+      ..style = PaintingStyle.fill;
+    final linePaint = Paint()
+      ..color = Colors.blue.shade600
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    for (var i = 0; i < values.length; i++) {
+      final dx = values.length == 1
+          ? size.width / 2
+          : (size.width * i) / (values.length - 1);
+      final dy = size.height * (1 - values[i].clamp(0.0, 1.0));
+      if (i == 0) {
+        path.moveTo(dx, dy);
+      } else {
+        path.lineTo(dx, dy);
+      }
+    }
+
+    canvas.drawPath(path, linePaint);
+
+    for (var i = 0; i < values.length; i++) {
+      final dx = values.length == 1
+          ? size.width / 2
+          : (size.width * i) / (values.length - 1);
+      final dy = size.height * (1 - values[i].clamp(0.0, 1.0));
+      canvas.drawCircle(Offset(dx, dy), 2.5, pointPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SummaryLineChartPainter oldDelegate) {
+    if (identical(oldDelegate.values, values)) return false;
+    if (oldDelegate.values.length != values.length) return true;
+    for (var i = 0; i < values.length; i++) {
+      if (oldDelegate.values[i] != values[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+

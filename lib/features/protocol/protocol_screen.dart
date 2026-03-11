@@ -1478,7 +1478,7 @@ BoxConstraints _widgetWindowBounds() {
 
                             if (snapshot.hasError || !snapshot.hasData) {
                               return const Text(
-                                'Today's summary is unavailable right now.',
+                                "Today's summary is unavailable right now.",
                               );
                             }
 
@@ -1500,11 +1500,11 @@ BoxConstraints _widgetWindowBounds() {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Today's Summary',
+                                    "Today's Summary",
                                     style: TextStyle(fontWeight: FontWeight.w700),
                                   ),
                                   const SizedBox(height: 8),
-                                  Text('Today's Completion: $percent%'),
+                                  Text("Today's Completion: $percent%"),
                                   const SizedBox(height: 4),
                                   Text('Logged Tasks: $loggedCount / $expectedCount'),
                                   const SizedBox(height: 4),
@@ -2070,10 +2070,16 @@ BoxConstraints _widgetWindowBounds() {
           .difference(since)
           .inMilliseconds;
     }
+
     _runningSince.remove(task.id);
     task.actualEndTs = DateTime.now().millisecondsSinceEpoch;
     task.status = 'done';
+
     await _saveTask(task);
+
+    final completedMinutes = (task.actualAccumulatedMs / 60000).floor();
+    await _upsertDailyCompletionForTask(task, completedMinutes);
+
     setState(() {});
   }
 

@@ -45,6 +45,13 @@ class _ProtocolScreenState extends State<ProtocolScreen>
       'Transition (Light meal / half-caff + cold water)';
   static const String _deskMantraTitle = 'Desk + Mantra';
   static const String _brainDumpTitle = 'Brain Dump';
+  static const int _lockedCoreTaskCount = 4;
+  static const List<String> _legacyCoreTitlesInOrder = [
+    _walkTitle,
+    _transitionTitle,
+    _deskMantraTitle,
+    _brainDumpTitle,
+  ];
   static const String _defaultThemeId = 'clouds';
 
   static const List<String> _themeOptions = [
@@ -58,12 +65,6 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   static const double _goalColumnWidth = 130;
   static const double _controlColumnWidth = 140;
   static const int _taskTitleMaxChars = 40;
-  static const Set<String> _mandatoryRitualTitles = {
-    _walkTitle,
-    _transitionTitle,
-    _deskMantraTitle,
-    _brainDumpTitle,
-  };
   static const double _widgetMinWidth = 520;
   static const double _widgetMinHeight = 220;
   static const double _widgetMaxWidth = 1600;
@@ -211,7 +212,10 @@ Future<void> _initialize() async {
   Future<void> _ensureTodayRitualTasks() async {
     final isar = await IsarDb.instance();
     final existing = await isar.tasks.filter().planIdEqualTo(_planId).findAll();
-    if (existing.isNotEmpty) return;
+    if (existing.isNotEmpty) {
+      await _normalizeLockedCoreTasks(existing);
+      return;
+    }
 
     final templates = <({String title, int? targetMin})>[
       (title: _walkTitle, targetMin: 30),
@@ -227,8 +231,10 @@ Future<void> _initialize() async {
         Task()
           ..planId = _planId
           ..orderIndex = i
-          ..type = 'ritual'
+          ..type = 'prep'
           ..title = item.title
+          ..isLockedCoreTask = true
+          ..lockedCoreSlot = i
           ..targetMin = item.targetMin
           ..status = 'not_started',
       );
@@ -236,6 +242,73 @@ Future<void> _initialize() async {
 
     await isar.writeTxn(() async {
       await isar.tasks.putAll(tasks);
+    });
+  }
+
+  Future<void> _normalizeLockedCoreTasks(List<Task> tasks) async {
+    if (tasks.isEmpty) return;
+
+    final ordered = [...tasks]..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final assignedTaskIds = <int>{};
+    final assignedSlots = <int, Task>{};
+    final updates = <Task>[];
+
+    bool _isValidLockedSlot(int? slot) =>
+        slot != null && slot >= 0 && slot < _lockedCoreTaskCount;
+
+    for (final task in ordered) {
+      if (!task.isLockedCoreTask) continue;
+      final slot = task.lockedCoreSlot;
+      if (!_isValidLockedSlot(slot) || assignedSlots.containsKey(slot)) {
+        task
+          ..isLockedCoreTask = false
+          ..lockedCoreSlot = null;
+        updates.add(task);
+        continue;
+      }
+      assignedSlots[slot!] = task;
+      assignedTaskIds.add(task.id);
+    }
+
+    Task? _firstUnassignedWhere(bool Function(Task task) matcher) {
+      for (final task in ordered) {
+        if (assignedTaskIds.contains(task.id)) continue;
+        if (matcher(task)) return task;
+      }
+      return null;
+    }
+
+    for (var slot = 0; slot < _lockedCoreTaskCount; slot++) {
+      if (assignedSlots.containsKey(slot)) continue;
+
+      final legacyTitle = _legacyCoreTitlesInOrder[slot];
+      final byLegacyTitle = _firstUnassignedWhere((task) => task.title == legacyTitle);
+      final fallbackFirstBlock = _firstUnassignedWhere((task) => task.orderIndex < _lockedCoreTaskCount);
+      final fallbackAny = _firstUnassignedWhere((_) => true);
+      final candidate = byLegacyTitle ?? fallbackFirstBlock ?? fallbackAny;
+      if (candidate == null) continue;
+
+      candidate
+        ..isLockedCoreTask = true
+        ..lockedCoreSlot = slot;
+      updates.add(candidate);
+      assignedSlots[slot] = candidate;
+      assignedTaskIds.add(candidate.id);
+    }
+
+    for (final task in ordered) {
+      if (!task.isLockedCoreTask) continue;
+      if (assignedTaskIds.contains(task.id)) continue;
+      task
+        ..isLockedCoreTask = false
+        ..lockedCoreSlot = null;
+      updates.add(task);
+    }
+
+    if (updates.isEmpty) return;
+    final isar = await IsarDb.instance();
+    await isar.writeTxn(() async {
+      await isar.tasks.putAll(updates);
     });
   }
 
@@ -2090,17 +2163,16 @@ BoxConstraints _widgetWindowBounds() {
     });
   }
 
-  int? _ritualOrder(String title) {
-    if (title == _walkTitle) return 0;
-    if (title == _transitionTitle) return 1;
-    if (title == _deskMantraTitle) return 2;
-    if (title == _brainDumpTitle) return 3;
-    return null;
+  int? _lockedCoreOrder(Task task) {
+    if (!task.isLockedCoreTask) return null;
+    final slot = task.lockedCoreSlot;
+    if (slot == null || slot < 0 || slot >= _lockedCoreTaskCount) return null;
+    return slot;
   }
 
   int? _nonRitualStartThreshold(List<Task> tasks) {
     for (final task in tasks) {
-      if (task.title != _brainDumpTitle) continue;
+      if (task.lockedCoreSlot != _lockedCoreTaskCount - 1) continue;
       if (task.plannedEndMin != null) return task.plannedEndMin;
       if (task.plannedStartMin != null && task.targetMin != null) {
         return task.plannedStartMin! + task.targetMin!;
@@ -2110,9 +2182,7 @@ BoxConstraints _widgetWindowBounds() {
   }
     List<Task> _lockedTasksInOrder(List<Task> tasks) {
     final locked = tasks.where(_isMandatoryTask).toList();
-    locked.sort((a, b) {
-      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
-    });
+    locked.sort((a, b) => _lockedCoreOrder(a)!.compareTo(_lockedCoreOrder(b)!));
     return locked;
   }
 
@@ -2121,7 +2191,7 @@ BoxConstraints _widgetWindowBounds() {
     required List<Task> tasks,
     required int proposedStart,
   }) {
-    final selectedOrder = _ritualOrder(selected.title);
+    final selectedOrder = _lockedCoreOrder(selected);
     if (selectedOrder == null) return null;
 
     final locked = _lockedTasksInOrder(tasks);
@@ -2129,7 +2199,7 @@ BoxConstraints _widgetWindowBounds() {
     for (final other in locked) {
       if (other.id == selected.id) continue;
 
-      final otherOrder = _ritualOrder(other.title);
+      final otherOrder = _lockedCoreOrder(other);
       final otherStart = other.plannedStartMin;
 
       if (otherOrder == null || otherStart == null) continue;
@@ -2357,7 +2427,7 @@ BoxConstraints _widgetWindowBounds() {
     final nonRitualTasks = <Task>[];
 
     for (final task in tasks) {
-      if (_ritualOrder(task.title) != null) {
+      if (_isMandatoryTask(task)) {
         ritualTasks.add(task);
       } else {
         nonRitualTasks.add(task);
@@ -2365,7 +2435,7 @@ BoxConstraints _widgetWindowBounds() {
     }
 
     ritualTasks.sort((a, b) {
-      return _ritualOrder(a.title)!.compareTo(_ritualOrder(b.title)!);
+      return _lockedCoreOrder(a)!.compareTo(_lockedCoreOrder(b)!);
     });
 
     int? timelineStartForSort(Task task) {
@@ -2758,7 +2828,7 @@ BoxConstraints _widgetWindowBounds() {
   }
 
   bool _isMandatoryTask(Task task) {
-    return _mandatoryRitualTitles.contains(task.title);
+    return task.isLockedCoreTask;
   }
 
   DateTime _nowLocal() => DateTime.now();
@@ -3979,4 +4049,3 @@ class _SummaryLineChartPainter extends CustomPainter {
     return false;
   }
 }
-

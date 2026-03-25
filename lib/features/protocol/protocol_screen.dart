@@ -44,6 +44,8 @@ class _ProtocolScreenState extends State<ProtocolScreen>
   static const String _transitionTitle =
       'Transition (Light meal / half-caff + cold water)';
   static const String _deskMantraTitle = 'Desk + Mantra';
+  static const String _thePrayerTitle = 'Prayer & Devotion';
+  static const String _theWalkTitle = 'Dog Walk + Duo Lingo';
   static const String _brainDumpTitle = 'Brain Dump';
   static const int _lockedCoreTaskCount = 4;
   static const List<String> _legacyCoreTitlesInOrder = [
@@ -51,6 +53,8 @@ class _ProtocolScreenState extends State<ProtocolScreen>
     _transitionTitle,
     _deskMantraTitle,
     _brainDumpTitle,
+    _thePrayerTitle,
+    _theWalkTitle
   ];
   static const String _defaultThemeId = 'clouds';
 
@@ -222,6 +226,8 @@ Future<void> _initialize() async {
       (title: _transitionTitle, targetMin: null),
       (title: _deskMantraTitle, targetMin: null),
       (title: _brainDumpTitle, targetMin: 15),
+      (title: _theWalkTitle, targetMin: 20),
+      (title: _thePrayerTitle, targetMin: 20),
     ];
 
     final tasks = <Task>[];
@@ -2163,12 +2169,20 @@ BoxConstraints _widgetWindowBounds() {
     });
   }
 
-  int? _lockedCoreOrder(Task task) {
-    if (!task.isLockedCoreTask) return null;
-    final slot = task.lockedCoreSlot;
-    if (slot == null || slot < 0 || slot >= _lockedCoreTaskCount) return null;
+int? _lockedCoreOrder(Task task) {
+  if (!_isMandatoryTask(task)) return null;
+
+  final slot = task.lockedCoreSlot;
+  if (slot != null && slot >= 0 && slot < _lockedCoreTaskCount) {
     return slot;
   }
+
+  if (task.orderIndex >= 0 && task.orderIndex < _lockedCoreTaskCount) {
+    return task.orderIndex;
+  }
+
+  return null;
+}
 
   int? _nonRitualStartThreshold(List<Task> tasks) {
     for (final task in tasks) {
@@ -2187,38 +2201,27 @@ BoxConstraints _widgetWindowBounds() {
   }
 
   String? _lockedSequenceValidationMessage({
-    required Task selected,
-    required List<Task> tasks,
-    required int proposedStart,
-  }) {
-    final selectedOrder = _lockedCoreOrder(selected);
-    if (selectedOrder == null) return null;
+  required Task selected,
+  required List<Task> tasks,
+  required int proposedStart,
+}) {
+  if (!_isMandatoryTask(selected)) return null;
 
-    final locked = _lockedTasksInOrder(tasks);
+  final firstNonLocked = tasks
+      .where((task) => !_isMandatoryTask(task))
+      .where((task) => task.plannedStartMin != null)
+      .map((task) => task.plannedStartMin!)
+      .fold<int?>(null, (current, value) {
+        if (current == null) return value;
+        return value < current ? value : current;
+      });
 
-    for (final other in locked) {
-      if (other.id == selected.id) continue;
-
-      final otherOrder = _lockedCoreOrder(other);
-      final otherStart = other.plannedStartMin;
-
-      if (otherOrder == null || otherStart == null) continue;
-
-      // A later locked row cannot start before an earlier locked row.
-      if (selectedOrder > otherOrder && proposedStart < otherStart) {
-        return 'This locked task must stay after the earlier locked tasks. '
-            'Choose a time that keeps rows 1–4 in order.';
-      }
-
-      // An earlier locked row cannot start after a later locked row.
-      if (selectedOrder < otherOrder && proposedStart > otherStart) {
-        return 'This locked task must stay before the later locked tasks. '
-            'Choose a time that keeps rows 1–4 in order.';
-      }
-    }
-
-    return null;
+  if (firstNonLocked != null && proposedStart > firstNonLocked) {
+    return 'Locked tasks must stay before the non-locked tasks.';
   }
+
+  return null;
+}
 
   Future<void> _showScheduleMessageDialog({
     required String title,
@@ -2422,72 +2425,80 @@ BoxConstraints _widgetWindowBounds() {
     }
   }
 
-  Future<void> _sortTasksByStartTime(List<Task> tasks) async {
-    final ritualTasks = <Task>[];
-    final nonRitualTasks = <Task>[];
+Future<void> _sortTasksByStartTime(List<Task> tasks) async {
+  final lockedTasks = <Task>[];
+  final nonLockedTasks = <Task>[];
 
-    for (final task in tasks) {
-      if (_isMandatoryTask(task)) {
-        ritualTasks.add(task);
-      } else {
-        nonRitualTasks.add(task);
-      }
+  for (final task in tasks) {
+    if (_isMandatoryTask(task)) {
+      lockedTasks.add(task);
+    } else {
+      nonLockedTasks.add(task);
     }
-
-    ritualTasks.sort((a, b) {
-      return _lockedCoreOrder(a)!.compareTo(_lockedCoreOrder(b)!);
-    });
-
-    int? timelineStartForSort(Task task) {
-      final start = task.plannedStartMin;
-      final end = task.plannedEndMin;
-      if (start == null || end == null) return null;
-
-      final isLockedTask = _isMandatoryTask(task);
-
-      final startOffset = _effectiveDayOffset(
-        isLockedTask: isLockedTask,
-        minutes: start,
-      );
-
-      final startTimeline = start + (startOffset * 1440);
-      return startTimeline;
-    }
-
-    nonRitualTasks.sort((a, b) {
-      final aStartTimeline = timelineStartForSort(a);
-      final bStartTimeline = timelineStartForSort(b);
-
-      if (aStartTimeline == null && bStartTimeline == null) {
-        return a.orderIndex.compareTo(b.orderIndex);
-      }
-      if (aStartTimeline == null) return 1;
-      if (bStartTimeline == null) return -1;
-
-      final byStart = aStartTimeline.compareTo(bStartTimeline);
-      if (byStart != 0) return byStart;
-
-      return a.orderIndex.compareTo(b.orderIndex);
-    });
-
-    final combined = <Task>[...ritualTasks, ...nonRitualTasks];
-
-    for (var i = 0; i < combined.length; i++) {
-      combined[i].orderIndex = i;
-    }
-
-    final isar = await IsarDb.instance();
-    await isar.writeTxn(() async {
-      await isar.tasks.putAll(combined);
-    });
-
-    // IMPORTANT:
-    // Keep the in-memory list in the same order we just persisted,
-    // so any follow-up logic (like cascade) uses the correct order.
-    tasks
-      ..clear()
-      ..addAll(combined);
   }
+
+  int? timelineStartForSort(Task task) {
+    final start = task.plannedStartMin;
+    final end = task.plannedEndMin;
+    if (start == null || end == null) return null;
+
+    final isLockedTask = _isMandatoryTask(task);
+
+    final startOffset = _effectiveDayOffset(
+      isLockedTask: isLockedTask,
+      minutes: start,
+    );
+
+    return start + (startOffset * 1440);
+  }
+
+  lockedTasks.sort((a, b) {
+    final aStartTimeline = timelineStartForSort(a);
+    final bStartTimeline = timelineStartForSort(b);
+
+    if (aStartTimeline == null && bStartTimeline == null) {
+      return a.orderIndex.compareTo(b.orderIndex);
+    }
+    if (aStartTimeline == null) return -1;
+    if (bStartTimeline == null) return 1;
+
+    final byTime = aStartTimeline.compareTo(bStartTimeline);
+    if (byTime != 0) return byTime;
+
+    return a.orderIndex.compareTo(b.orderIndex);
+  });
+
+  nonLockedTasks.sort((a, b) {
+    final aStartTimeline = timelineStartForSort(a);
+    final bStartTimeline = timelineStartForSort(b);
+
+    if (aStartTimeline == null && bStartTimeline == null) {
+      return a.orderIndex.compareTo(b.orderIndex);
+    }
+    if (aStartTimeline == null) return 1;
+    if (bStartTimeline == null) return -1;
+
+    final byTime = aStartTimeline.compareTo(bStartTimeline);
+    if (byTime != 0) return byTime;
+
+    return a.orderIndex.compareTo(b.orderIndex);
+  });
+
+  for (var i = 0; i < lockedTasks.length; i++) {
+    lockedTasks[i].lockedCoreSlot = i;
+  }
+
+  final reordered = [...lockedTasks, ...nonLockedTasks];
+
+  for (var i = 0; i < reordered.length; i++) {
+    reordered[i].orderIndex = i;
+  }
+
+  final isar = await IsarDb.instance();
+  await isar.writeTxn(() async {
+    await isar.tasks.putAll(reordered);
+  });
+}
 
   Future<void> _cascadeOverlapsFromIndex(List<Task> tasks, int editedIndex) async {
     if (editedIndex < 0 || editedIndex >= tasks.length) return;
@@ -2827,9 +2838,16 @@ BoxConstraints _widgetWindowBounds() {
     }
   }
 
-  bool _isMandatoryTask(Task task) {
-    return task.isLockedCoreTask;
+bool _isMandatoryTask(Task task) {
+  if (task.isLockedCoreTask) return true;
+
+  final slot = task.lockedCoreSlot;
+  if (slot != null && slot >= 0 && slot < _lockedCoreTaskCount) {
+    return true;
   }
+
+  return task.orderIndex >= 0 && task.orderIndex < _lockedCoreTaskCount;
+}
 
   DateTime _nowLocal() => DateTime.now();
 
@@ -2904,8 +2922,10 @@ BoxConstraints _widgetWindowBounds() {
   String _taskEmoji(Task task) {
     final lower = task.title.toLowerCase();
     if (lower.startsWith('walk')) return '🚶';
-    if (lower.startsWith('transition')) return '⚡';
+    if (lower.startsWith('transition')) return '☕';
     if (lower.startsWith('desk + mantra')) return '🪑';
+    if (lower.startsWith('prayer')) return '🙏';
+    if (lower.startsWith('dog')) return '🐕🐥';
     if (lower.startsWith('brain dump')) return '🧠';
     if (lower.contains('reading')) return '📖';
     if (lower.contains('writing')) return '✍️';

@@ -11,6 +11,8 @@ class Task {
 
   late String type;
   late String title;
+  bool isLockedCoreTask = false;
+  int? lockedCoreSlot;
 
   List<String> bullets = [];
 

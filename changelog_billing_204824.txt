@@ -1,0 +1,6 @@
+﻿BILLING: Stripe webhook retry logic updated — 2026-05-19 20:48:24
+
+Changed invoice generation timeout from 30s to 10s. Partners using billing
+integrations may see webhook delivery delays during high invoice volume periods.
+Invoicing pipeline now retries failed payments up to 3 times before marking
+as declined. Affects all accounts with active billing scopes.
